@@ -9,6 +9,7 @@ import { testConnection, closePool } from './utils/db';
 import { validateConfig } from './utils/config';
 import { authenticate } from './middleware/auth.middleware';
 import { userService } from './services/user.service';
+import { closeSolanaConnection } from './utils/solana';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -168,6 +169,9 @@ async function shutdown(signal: string) {
   try {
     // TODO: When execution controller is implemented, wait for in-flight transactions
     // await executionController.waitForInFlightExecutions();
+
+    // Close Solana connection
+    closeSolanaConnection();
 
     // Close database connections
     await closePool();
