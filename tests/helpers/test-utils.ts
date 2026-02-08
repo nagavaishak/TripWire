@@ -21,8 +21,8 @@ export async function cleanupTestDatabase(): Promise<void> {
   await query('DELETE FROM executions', []);
   await query('DELETE FROM rules', []);
   await query('DELETE FROM automation_wallets', []);
-  await query('DELETE FROM users WHERE email LIKE %test%', []);
-  await query('DELETE FROM audit_log WHERE event_type = %TEST%', []);
+  await query("DELETE FROM users WHERE email LIKE '%test%'", []);
+  await query("DELETE FROM audit_log WHERE event_type = 'TEST'", []);
 }
 
 /**
