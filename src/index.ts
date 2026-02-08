@@ -7,6 +7,8 @@ import logger from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { testConnection, closePool } from './utils/db';
 import { validateConfig } from './utils/config';
+import { authenticate } from './middleware/auth.middleware';
+import { userService } from './services/user.service';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,7 +26,7 @@ try {
 
 app.use(express.json({ limit: '10kb' })); // Request size limit for DDoS protection
 
-// Health check
+// Public routes (no authentication required)
 app.get('/health', async (_req, res) => {
   const dbHealthy = await testConnection();
 
@@ -33,6 +35,88 @@ app.get('/health', async (_req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     database: dbHealthy ? 'connected' : 'disconnected',
+  });
+});
+
+// User registration endpoint (public)
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, main_wallet_address } = req.body;
+
+    if (!email || !main_wallet_address) {
+      res.status(400).json({
+        error: 'Email and main_wallet_address are required',
+        code: 'MISSING_FIELDS',
+      });
+      return;
+    }
+
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      res.status(400).json({
+        error: 'Invalid email format',
+        code: 'INVALID_EMAIL',
+      });
+      return;
+    }
+
+    // Validate Solana address format (44 characters, base58)
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(main_wallet_address)) {
+      res.status(400).json({
+        error: 'Invalid Solana wallet address',
+        code: 'INVALID_WALLET',
+      });
+      return;
+    }
+
+    const { user, apiKey } = await userService.createUser(
+      email,
+      main_wallet_address,
+    );
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        main_wallet_address: user.main_wallet_address,
+        created_at: user.created_at,
+      },
+      api_key: apiKey, // ONLY TIME THIS IS VISIBLE - save it!
+      warning: 'Save your API key securely. It will not be shown again.',
+    });
+  } catch (error) {
+    logger.error('User registration error', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    if (error instanceof Error && error.message.includes('already exists')) {
+      res.status(409).json({
+        error: error.message,
+        code: 'USER_EXISTS',
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: 'Failed to create user',
+      code: 'REGISTRATION_ERROR',
+    });
+  }
+});
+
+// Protected routes - require authentication
+app.use('/api', authenticate); // All /api/* routes now require Bearer token
+
+// TODO: Add actual API endpoints here (rules, wallets, etc.)
+app.get('/api/me', (req, res) => {
+  // Test endpoint to verify authentication
+  res.json({
+    user: {
+      id: req.user!.id,
+      email: req.user!.email,
+      main_wallet_address: req.user!.main_wallet_address,
+    },
   });
 });
 
