@@ -122,7 +122,9 @@ app.get('/api/me', (req, res) => {
 
 // API Routes
 import rulesRoutes from './routes/rules.routes';
+import walletsRoutes from './routes/wallets.routes';
 app.use('/api/rules', rulesRoutes);
+app.use('/api/wallets', walletsRoutes);
 
 // Error handling
 app.use(errorHandler);
