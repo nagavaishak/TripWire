@@ -11,7 +11,9 @@ CREATE TABLE execution_locks (
 );
 
 -- Unique constraint to prevent concurrent execution of same rule
-CREATE UNIQUE INDEX idx_execution_locks_rule_id ON execution_locks(rule_id) WHERE expires_at > NOW();
+-- Note: We rely on application logic and cleanup function to remove expired locks
+-- Cannot use WHERE expires_at > NOW() as NOW() is not IMMUTABLE
+CREATE UNIQUE INDEX idx_execution_locks_rule_id ON execution_locks(rule_id);
 
 -- Index for cleanup queries (removing expired locks)
 CREATE INDEX idx_execution_locks_expires_at ON execution_locks(expires_at);

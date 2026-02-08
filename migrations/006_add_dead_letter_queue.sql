@@ -1,8 +1,14 @@
 -- Add dead letter queue for failed execution recovery
 -- Part of P0_006: Dead Letter Queue for FAILED Recovery
 
--- Add retry_count to executions table
-ALTER TABLE executions ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+-- Add retry_count to executions table (if not exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='executions' AND column_name='retry_count') THEN
+    ALTER TABLE executions ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+  END IF;
+END $$;
 
 -- Create dead letter queue table
 CREATE TABLE dead_letter_queue (
