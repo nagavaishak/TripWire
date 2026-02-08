@@ -1,4 +1,5 @@
 import { Configuration, MarketApi } from 'kalshi-typescript';
+import axios from 'axios';
 import logger from '../utils/logger';
 import {
   KalshiProbabilityData,
@@ -9,13 +10,17 @@ import {
 /**
  * Kalshi Service with Official SDK
  * Uses RSA-PSS authentication for secure API access
- * Supports mock mode for development without real credentials
+ * Supports:
+ * - Real mode: Authenticated API access with private key
+ * - Public mode: Public endpoints (no auth required) - great for demos!
+ * - Mock mode: Deterministic fake data for testing
  */
 export class KalshiService {
   private marketApi: MarketApi | null = null;
   private config: Configuration | null = null;
   private environment: 'demo' | 'production';
   private mockMode: boolean;
+  private publicMode: boolean;
 
   constructor(params?: {
     apiKeyId?: string;
@@ -23,6 +28,7 @@ export class KalshiService {
     privateKeyPath?: string;
     environment?: 'demo' | 'production';
     mockMode?: boolean;
+    publicMode?: boolean;
   }) {
     // Get credentials from params or environment
     const apiKeyId = params?.apiKeyId || process.env.KALSHI_API_KEY_ID || '';
@@ -36,6 +42,8 @@ export class KalshiService {
       'production';
     this.mockMode =
       params?.mockMode ?? process.env.KALSHI_MOCK_MODE === 'true';
+    this.publicMode =
+      params?.publicMode ?? process.env.KALSHI_PUBLIC_MODE === 'true';
 
     // Mock mode - skip SDK initialization
     if (this.mockMode) {
@@ -45,20 +53,22 @@ export class KalshiService {
       return;
     }
 
-    // Real mode - validate credentials
-    if (!apiKeyId) {
-      logger.warn(
-        'KALSHI_API_KEY_ID not configured - using mock mode. Set KALSHI_MOCK_MODE=false when credentials are available.',
-      );
-      this.mockMode = true;
+    // Public mode - use public endpoints (no auth required)
+    if (this.publicMode || (!apiKeyId && !this.mockMode)) {
+      this.publicMode = true;
+      logger.info('Kalshi service initialized in PUBLIC MODE (no auth required)', {
+        environment: this.environment,
+        info: 'Using public Kalshi API - great for demos!',
+      });
       return;
     }
 
+    // Real mode - validate credentials
     if (!privateKeyPem && !privateKeyPath) {
       logger.warn(
-        'KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not configured - using mock mode. Set KALSHI_MOCK_MODE=false when credentials are available.',
+        'KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not configured - using public mode',
       );
-      this.mockMode = true;
+      this.publicMode = true;
       return;
     }
 
@@ -99,7 +109,12 @@ export class KalshiService {
       return this.getMockProbability(marketTicker);
     }
 
-    // Real API mode
+    // Public mode - use public API
+    if (this.publicMode) {
+      return this.fetchFromPublicAPI(marketTicker);
+    }
+
+    // Real API mode with authentication
     const maxRetries = 3;
     let lastError: Error | null = null;
 
@@ -176,6 +191,69 @@ export class KalshiService {
       error: lastError?.message,
     });
     throw lastError || new Error('Failed to fetch Kalshi probability');
+  }
+
+  /**
+   * Fetch from public Kalshi API (no authentication required)
+   * Uses public /markets endpoint - perfect for prototypes and demos
+   * PUBLIC MODE ONLY
+   */
+  private async fetchFromPublicAPI(
+    marketTicker: string,
+  ): Promise<KalshiProbabilityData> {
+    const baseUrl =
+      this.environment === 'demo'
+        ? KALSHI_API_BASE_URL_DEMO
+        : KALSHI_API_BASE_URL_PRODUCTION;
+
+    try {
+      logger.info('Fetching from public Kalshi API', {
+        marketTicker,
+        environment: this.environment,
+      });
+
+      // Use public /markets endpoint to search for the market
+      const response = await axios.get(`${baseUrl}/trade-api/v2/markets/${marketTicker}`, {
+        headers: {
+          'Accept': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      const market = response.data.market;
+
+      if (!market) {
+        throw new Error('Market not found in public API response');
+      }
+
+      // Extract probability from last_price (Kalshi prices are in cents, 0-100)
+      const lastPrice = market.last_price || market.yes_bid || 50;
+      const probability = lastPrice / 100;
+
+      logger.info('Successfully fetched from public Kalshi API', {
+        marketTicker,
+        probability,
+        lastPrice,
+      });
+
+      return {
+        marketId: marketTicker,
+        probability,
+        timestamp: new Date(),
+        lastPrice,
+        volume: market.volume || 0,
+        openInterest: market.open_interest || 0,
+      };
+    } catch (error) {
+      logger.error('Failed to fetch from public Kalshi API', {
+        marketTicker,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      // Fallback to mock data if public API fails
+      logger.warn('Falling back to mock data');
+      return this.getMockProbability(marketTicker);
+    }
   }
 
   /**
