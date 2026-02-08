@@ -31,6 +31,19 @@ interface Withdrawal {
   completed_at: Date | null;
 }
 
+/**
+ * Helper function to conditionally use transaction query or regular query
+ */
+async function conditionalQuery<T extends import('pg').QueryResultRow = any>(
+  client: PoolClient | undefined,
+  text: string,
+  params?: any[]
+) {
+  return client
+    ? await transactionQuery<T>(client, text, params)
+    : await query<T>(text, params);
+}
+
 export class WithdrawalService {
   /**
    * Generate deterministic idempotency key for withdrawal
@@ -67,7 +80,7 @@ export class WithdrawalService {
     });
 
     // Check for existing withdrawal with same idempotency key
-    const existingResult = await (client ? transactionQuery : query)(
+    const existingResult = await conditionalQuery(
       client,
       'SELECT id, tx_signature, status FROM withdrawals WHERE idempotency_key = $1',
       [idempotencyKey],
@@ -119,7 +132,7 @@ export class WithdrawalService {
     }
 
     // Check for near-duplicate withdrawal (same params within 1 second)
-    const duplicateCheckResult = await (client ? transactionQuery : query)(
+    const duplicateCheckResult = await conditionalQuery(
       client,
       `SELECT id, tx_signature, status FROM withdrawals
        WHERE user_id = $1
@@ -144,7 +157,7 @@ export class WithdrawalService {
       });
 
       // Audit log for security monitoring
-      await (client ? transactionQuery : query)(
+      await conditionalQuery(
         client,
         `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
          VALUES ('SECURITY', 'withdrawal', $1, 'replay_attempt_blocked', $2)`,
@@ -167,7 +180,7 @@ export class WithdrawalService {
     }
 
     // Verify wallet belongs to user
-    const walletCheck = await (client ? transactionQuery : query)(
+    const walletCheck = await conditionalQuery(
       client,
       'SELECT user_id FROM automation_wallets WHERE id = $1',
       [params.walletId],
@@ -183,7 +196,7 @@ export class WithdrawalService {
         walletId: params.walletId,
       });
 
-      await (client ? transactionQuery : query)(
+      await conditionalQuery(
         client,
         `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
          VALUES ('SECURITY', 'withdrawal', NULL, 'unauthorized_attempt', $1)`,
@@ -199,7 +212,7 @@ export class WithdrawalService {
     }
 
     // Create new withdrawal
-    const result = await (client ? transactionQuery : query)(
+    const result = await conditionalQuery(
       client,
       `INSERT INTO withdrawals
        (user_id, wallet_id, amount, destination_address, status, idempotency_key, initiated_at, created_at, updated_at)
@@ -225,7 +238,7 @@ export class WithdrawalService {
     });
 
     // Audit log
-    await (client ? transactionQuery : query)(
+    await conditionalQuery(
       client,
       `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
        VALUES ('WITHDRAWAL', 'withdrawal', $1, 'initiated', $2)`,

@@ -126,5 +126,5 @@ export function isExecutionEnabled(): boolean {
  * Check if a token is supported
  */
 export function isSupportedToken(tokenMint: string): boolean {
-  return Object.values(CONFIG.SUPPORTED_TOKENS).includes(tokenMint);
+  return Object.values(CONFIG.SUPPORTED_TOKENS).includes(tokenMint as any);
 }

@@ -410,7 +410,6 @@ describe('Execution Flow Tests', () => {
         signature: 'mock-signature-' + Math.random().toString(36).substring(7),
         inputAmount: 1000000,
         outputAmount: 50000000,
-        error: null,
       });
     });
 

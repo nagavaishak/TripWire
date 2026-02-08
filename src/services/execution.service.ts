@@ -49,11 +49,16 @@ export class ExecutionService {
     });
 
     // Check if execution already exists
-    const existingResult = await (client ? transactionQuery : query)(
-      client,
-      'SELECT id, tx_signature, status FROM executions WHERE idempotency_key = $1',
-      [idempotencyKey],
-    );
+    const existingResult = client
+      ? await transactionQuery(
+          client,
+          'SELECT id, tx_signature, status FROM executions WHERE idempotency_key = $1',
+          [idempotencyKey],
+        )
+      : await query(
+          'SELECT id, tx_signature, status FROM executions WHERE idempotency_key = $1',
+          [idempotencyKey],
+        );
 
     if (existingResult.rows.length > 0) {
       const existing = existingResult.rows[0];
@@ -109,14 +114,22 @@ export class ExecutionService {
     }
 
     // Create new execution
-    const result = await (client ? transactionQuery : query)(
-      client,
-      `INSERT INTO executions
+    const result = client
+      ? await transactionQuery(
+          client,
+          `INSERT INTO executions
        (rule_id, triggered_at, market_condition, status, idempotency_key, created_at, updated_at)
        VALUES ($1, $2, $3, 'TRIGGERED', $4, NOW(), NOW())
        RETURNING id`,
-      [ruleId, triggeredAt, JSON.stringify(marketCondition), idempotencyKey],
-    );
+          [ruleId, triggeredAt, JSON.stringify(marketCondition), idempotencyKey],
+        )
+      : await query(
+          `INSERT INTO executions
+       (rule_id, triggered_at, market_condition, status, idempotency_key, created_at, updated_at)
+       VALUES ($1, $2, $3, 'TRIGGERED', $4, NOW(), NOW())
+       RETURNING id`,
+          [ruleId, triggeredAt, JSON.stringify(marketCondition), idempotencyKey],
+        );
 
     const executionId = result.rows[0].id;
 
@@ -127,19 +140,34 @@ export class ExecutionService {
     });
 
     // Log to audit log
-    await (client ? transactionQuery : query)(
-      client,
-      `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
+    if (client) {
+      await transactionQuery(
+        client,
+        `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
        VALUES ('EXECUTION', 'execution', $1, 'created', $2)`,
-      [
-        executionId,
-        JSON.stringify({
-          ruleId,
-          triggeredAt,
-          idempotencyKey,
-        }),
-      ],
-    );
+        [
+          executionId,
+          JSON.stringify({
+            ruleId,
+            triggeredAt,
+            idempotencyKey,
+          }),
+        ],
+      );
+    } else {
+      await query(
+        `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
+       VALUES ('EXECUTION', 'execution', $1, 'created', $2)`,
+        [
+          executionId,
+          JSON.stringify({
+            ruleId,
+            triggeredAt,
+            idempotencyKey,
+          }),
+        ],
+      );
+    }
 
     return {
       id: executionId,

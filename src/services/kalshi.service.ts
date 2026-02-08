@@ -112,9 +112,7 @@ export class KalshiService {
         });
 
         // Use official SDK to fetch market
-        const response = await this.marketApi!.getMarket({
-          marketTicker,
-        });
+        const response = await this.marketApi!.getMarket(marketTicker);
 
         // Validate response structure
         if (!response.data?.market) {

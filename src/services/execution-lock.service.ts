@@ -14,6 +14,19 @@ import { PoolClient } from 'pg';
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const PROCESS_ID = `${os.hostname()}:${process.pid}`;
 
+/**
+ * Helper function to conditionally use transaction query or regular query
+ */
+async function conditionalQuery<T extends import('pg').QueryResultRow = any>(
+  client: PoolClient | undefined,
+  text: string,
+  params?: any[]
+) {
+  return client
+    ? await transactionQuery<T>(client, text, params)
+    : await query<T>(text, params);
+}
+
 export class ExecutionLockService {
   /**
    * Acquire execution lock for a rule
@@ -39,7 +52,7 @@ export class ExecutionLockService {
 
     // Try to acquire PostgreSQL advisory lock
     // This ensures distributed locking across multiple processes/servers
-    const advisoryLockResult = await (client ? transactionQuery : query)(
+    const advisoryLockResult = await conditionalQuery(
       client,
       'SELECT pg_try_advisory_lock($1) as acquired',
       [ruleId],
@@ -65,7 +78,7 @@ export class ExecutionLockService {
     try {
       const expiresAt = new Date(Date.now() + LOCK_TIMEOUT_MS);
 
-      await (client ? transactionQuery : query)(
+      await conditionalQuery(
         client,
         `INSERT INTO execution_locks (rule_id, locked_by, locked_at, expires_at)
          VALUES ($1, $2, NOW(), $3)
@@ -75,7 +88,7 @@ export class ExecutionLockService {
       );
 
       // Verify lock was created (could fail if another process beat us)
-      const verifyResult = await (client ? transactionQuery : query)(
+      const verifyResult = await conditionalQuery(
         client,
         `SELECT locked_by FROM execution_locks
          WHERE rule_id = $1 AND expires_at > NOW()`,
@@ -115,7 +128,7 @@ export class ExecutionLockService {
       });
 
       // Audit log
-      await (client ? transactionQuery : query)(
+      await conditionalQuery(
         client,
         `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
          VALUES ('LOCK', 'rule', $1, 'lock_acquired', $2)`,
@@ -150,7 +163,7 @@ export class ExecutionLockService {
 
     try {
       // Remove lock record
-      const result = await (client ? transactionQuery : query)(
+      const result = await conditionalQuery(
         client,
         `DELETE FROM execution_locks
          WHERE rule_id = $1 AND locked_by = $2
@@ -165,7 +178,7 @@ export class ExecutionLockService {
         });
 
         // Audit log
-        await (client ? transactionQuery : query)(
+        await conditionalQuery(
           client,
           `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
            VALUES ('LOCK', 'rule', $1, 'lock_released', $2)`,
@@ -206,7 +219,7 @@ export class ExecutionLockService {
     // Clean up expired locks first
     await this.cleanupExpiredLocks(client);
 
-    const result = await (client ? transactionQuery : query)(
+    const result = await conditionalQuery(
       client,
       `SELECT locked_by, expires_at FROM execution_locks
        WHERE rule_id = $1 AND expires_at > NOW()`,
@@ -236,7 +249,7 @@ export class ExecutionLockService {
     ruleId: number,
     client?: PoolClient,
   ): Promise<{ locked_by: string; expires_at: Date } | null> {
-    const result = await (client ? transactionQuery : query)(
+    const result = await conditionalQuery(
       client,
       `SELECT locked_by, expires_at FROM execution_locks
        WHERE rule_id = $1 AND expires_at > NOW()`,
@@ -261,7 +274,7 @@ export class ExecutionLockService {
     client?: PoolClient,
   ): Promise<void> {
     try {
-      await (client ? transactionQuery : query)(
+      await conditionalQuery(
         client,
         'SELECT pg_advisory_unlock($1)',
         [ruleId],
@@ -283,7 +296,7 @@ export class ExecutionLockService {
    */
   async cleanupExpiredLocks(client?: PoolClient): Promise<number> {
     try {
-      const result = await (client ? transactionQuery : query)(
+      const result = await conditionalQuery(
         client,
         'SELECT cleanup_expired_locks() as count',
         [],

@@ -12,6 +12,19 @@ import { PoolClient } from 'pg';
 
 const MAX_RETRIES = 3; // Maximum retry attempts before DLQ
 
+/**
+ * Helper function to conditionally use transaction query or regular query
+ */
+async function conditionalQuery<T extends import('pg').QueryResultRow = any>(
+  client: PoolClient | undefined,
+  text: string,
+  params?: any[]
+) {
+  return client
+    ? await transactionQuery<T>(client, text, params)
+    : await query<T>(text, params);
+}
+
 interface DLQItem {
   id: number;
   execution_id: number;
@@ -47,7 +60,7 @@ export class DeadLetterQueueService {
     });
 
     // Check if execution already in DLQ
-    const existingResult = await (client ? transactionQuery : query)(
+    const existingResult = await conditionalQuery(
       client,
       `SELECT id, status FROM dead_letter_queue
        WHERE execution_id = $1 AND status IN ('PENDING', 'RETRYING')`,
@@ -64,7 +77,7 @@ export class DeadLetterQueueService {
     }
 
     // Get last attempt timestamp from execution
-    const executionResult = await (client ? transactionQuery : query)(
+    const executionResult = await conditionalQuery(
       client,
       'SELECT updated_at FROM executions WHERE id = $1',
       [executionId],
@@ -77,7 +90,7 @@ export class DeadLetterQueueService {
     const lastAttemptAt = executionResult.rows[0].updated_at;
 
     // Insert into DLQ
-    const result = await (client ? transactionQuery : query)(
+    const result = await conditionalQuery(
       client,
       `INSERT INTO dead_letter_queue
        (execution_id, failure_reason, retry_count, last_attempt_at, status, created_at, updated_at)
@@ -96,7 +109,7 @@ export class DeadLetterQueueService {
     });
 
     // Audit log
-    await (client ? transactionQuery : query)(
+    await conditionalQuery(
       client,
       `INSERT INTO audit_log (event_type, resource_type, resource_id, action, details)
        VALUES ('DLQ', 'execution', $1, 'moved_to_dlq', $2)`,
@@ -288,7 +301,7 @@ export class DeadLetterQueueService {
     executionId: number,
     client?: PoolClient,
   ): Promise<number> {
-    const result = await (client ? transactionQuery : query)(
+    const result = await conditionalQuery(
       client,
       `UPDATE executions
        SET retry_count = retry_count + 1,
