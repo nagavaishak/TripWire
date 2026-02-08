@@ -1,8 +1,14 @@
+import { Keypair } from '@solana/web3.js';
 import { RuleResponse } from '../types/rules';
 import { KalshiProbabilityData } from '../types/kalshi';
 import { executionService } from './execution.service';
 import { executionLockService } from './execution-lock.service';
 import { deadLetterQueueService } from './dead-letter-queue.service';
+import { jupiterSwapService } from './jupiter-swap.service';
+import { walletService } from './wallet.service';
+import { secretsManager } from './secrets-manager.service';
+import { withSecureKey } from '../utils/secure-key-handler';
+import { getTokenMint, getStablecoinMint, SwapParams } from '../types/swap';
 import { query } from '../utils/db';
 import logger from '../utils/logger';
 import { CONFIG } from '../utils/config';
@@ -102,15 +108,12 @@ export class ExecutionCoordinatorService {
       // Step 3: Update rule status to TRIGGERED
       await this.updateRuleStatus(rule.id, 'TRIGGERED', new Date());
 
-      // Step 4: Execute swap (mock for now - will implement swap logic later)
+      // Step 4: Execute swap via Jupiter
       try {
-        await this.executeSwap(rule, executionId, marketData);
+        const signature = await this.executeSwap(rule, executionId, marketData);
 
         // Step 5: Mark execution as completed
-        await executionService.markExecutionCompleted(
-          executionId,
-          'mock-signature-' + executionId, // TODO: Real signature from Solana
-        );
+        await executionService.markExecutionCompleted(executionId, signature);
 
         // Step 6: Update rule back to ACTIVE (can trigger again after cooldown)
         await this.updateRuleStatus(rule.id, 'ACTIVE', null);
@@ -196,16 +199,15 @@ export class ExecutionCoordinatorService {
   }
 
   /**
-   * Execute swap transaction
-   * TODO: Implement actual Solana swap with Jupiter/Raydium
-   * For now: Mock implementation
+   * Execute swap transaction via Jupiter
+   * CRITICAL: Real Solana swap execution
    */
   private async executeSwap(
     rule: RuleResponse,
     executionId: number,
     marketData: KalshiProbabilityData,
-  ): Promise<void> {
-    logger.info('Executing swap (MOCK)', {
+  ): Promise<string> {
+    logger.info('Executing real swap via Jupiter', {
       ruleId: rule.id,
       executionId,
       triggerType: rule.trigger_type,
@@ -213,21 +215,107 @@ export class ExecutionCoordinatorService {
       walletId: rule.automation_wallet_id,
     });
 
-    // Mock delay to simulate swap execution
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Step 1: Get wallet details
+    const walletResult = await query(
+      'SELECT * FROM automation_wallets WHERE id = $1',
+      [rule.automation_wallet_id],
+    );
 
-    // TODO: Implement actual swap logic:
-    // 1. Get wallet private key (using secure-key-handler)
-    // 2. Build swap transaction (Jupiter API)
-    // 3. Sign transaction
-    // 4. Send to Solana with blockhash management
-    // 5. Wait for confirmation
-    // 6. Update execution with transaction signature
+    if (walletResult.rows.length === 0) {
+      throw new Error('Automation wallet not found');
+    }
 
-    logger.info('Swap executed successfully (MOCK)', {
+    const wallet = walletResult.rows[0];
+
+    // Step 2: Get wallet balance
+    const balance = await walletService.getWalletBalance(wallet.public_key);
+
+    if (balance === 0) {
+      throw new Error('Wallet balance is zero - cannot execute swap');
+    }
+
+    // Step 3: Determine swap parameters based on trigger type
+    let inputMint: string;
+    let outputMint: string;
+
+    if (rule.trigger_type === 'SWAP_TO_STABLECOIN') {
+      // Selling SOL for USDC
+      inputMint = getTokenMint('SOL');
+      outputMint = getStablecoinMint();
+    } else if (rule.trigger_type === 'SWAP_TO_SOL') {
+      // Buying SOL with USDC (assume wallet has USDC)
+      inputMint = getStablecoinMint();
+      outputMint = getTokenMint('SOL');
+    } else {
+      throw new Error(`Unknown trigger type: ${rule.trigger_type}`);
+    }
+
+    // Step 4: Calculate swap amount (percentage of balance)
+    const swapAmount = Math.floor((balance * rule.swap_percentage) / 100);
+
+    if (swapAmount === 0) {
+      throw new Error(
+        `Swap amount too small (${swapAmount} lamports) - increase balance or percentage`,
+      );
+    }
+
+    logger.info('Swap parameters determined', {
+      inputMint,
+      outputMint,
+      balance,
+      swapPercentage: rule.swap_percentage,
+      swapAmount,
+    });
+
+    // Step 5: Execute swap with private key
+    const masterKey = await secretsManager.getMasterKey(
+      'automation_wallet',
+      rule.automation_wallet_id,
+    );
+
+    const swapResult = await withSecureKey(
+      wallet.encrypted_private_key,
+      wallet.iv,
+      wallet.auth_tag,
+      masterKey,
+      async (privateKeyBytes) => {
+        // Create keypair from private key
+        const keypair = Keypair.fromSecretKey(privateKeyBytes);
+
+        // Build swap parameters
+        const swapParams: SwapParams = {
+          inputMint,
+          outputMint,
+          amount: swapAmount,
+          slippageBps: CONFIG.SLIPPAGE_TOLERANCE_BPS,
+          userPublicKey: wallet.public_key,
+        };
+
+        // Execute swap via Jupiter
+        return await jupiterSwapService.executeSwap(swapParams, keypair);
+      },
+    );
+
+    if (!swapResult.success) {
+      throw new Error(`Swap failed: ${swapResult.error}`);
+    }
+
+    logger.info('Swap executed successfully', {
       executionId,
       ruleId: rule.id,
+      signature: swapResult.signature,
+      inputAmount: swapResult.inputAmount,
+      outputAmount: swapResult.outputAmount,
     });
+
+    // Step 6: Update execution with transaction info
+    await executionService.updateExecutionWithTransaction(
+      executionId,
+      swapResult.signature!,
+      'jupiter-swap', // blockhash (not critical for Jupiter swaps)
+    );
+
+    return swapResult.signature!;
   }
 
   /**
