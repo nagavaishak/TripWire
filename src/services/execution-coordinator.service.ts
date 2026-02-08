@@ -1,0 +1,263 @@
+import { RuleResponse } from '../types/rules';
+import { KalshiProbabilityData } from '../types/kalshi';
+import { executionService } from './execution.service';
+import { executionLockService } from './execution-lock.service';
+import { deadLetterQueueService } from './dead-letter-queue.service';
+import { query } from '../utils/db';
+import logger from '../utils/logger';
+import { CONFIG } from '../utils/config';
+
+/**
+ * Execution Coordinator Service
+ * Orchestrates the complete execution flow with all P0 safety features
+ * CRITICAL: This is the main business logic that executes swaps
+ */
+export class ExecutionCoordinatorService {
+  /**
+   * Execute a rule
+   * CRITICAL: Main entry point for rule execution
+   * Handles: locks, idempotency, transaction building, confirmation, DLQ
+   *
+   * @param rule - Rule to execute
+   * @param marketData - Market data that triggered the rule
+   * @returns Execution result
+   */
+  async executeRule(
+    rule: RuleResponse,
+    marketData: KalshiProbabilityData,
+  ): Promise<{
+    success: boolean;
+    executionId: number;
+    message: string;
+  }> {
+    logger.info('Starting rule execution', {
+      ruleId: rule.id,
+      ruleName: rule.name,
+      marketId: marketData.marketId,
+      probability: marketData.probability,
+    });
+
+    // Check kill switch
+    if (!CONFIG.EXECUTION_ENABLED) {
+      logger.warn('Execution disabled by kill switch', {
+        ruleId: rule.id,
+      });
+      return {
+        success: false,
+        executionId: 0,
+        message: 'Execution disabled by kill switch (EXECUTION_ENABLED=false)',
+      };
+    }
+
+    let lockAcquired = false;
+
+    try {
+      // Step 1: Acquire execution lock
+      logger.debug('Acquiring execution lock', { ruleId: rule.id });
+      const lockResult = await executionLockService.acquireLock(rule.id);
+
+      if (!lockResult.acquired) {
+        logger.warn('Failed to acquire lock - rule already executing', {
+          ruleId: rule.id,
+          lockedBy: lockResult.lockedBy,
+        });
+        return {
+          success: false,
+          executionId: 0,
+          message: `Rule is already being executed by ${lockResult.lockedBy}`,
+        };
+      }
+
+      lockAcquired = true;
+      logger.info('Execution lock acquired', { ruleId: rule.id });
+
+      // Step 2: Create execution with idempotency check
+      logger.debug('Creating execution record', { ruleId: rule.id });
+      const executionResult = await executionService.createExecution(
+        rule.id,
+        new Date(), // triggered_at
+        marketData, // market_condition
+      );
+
+      if (!executionResult.isNew) {
+        logger.info('Execution already exists (idempotent)', {
+          executionId: executionResult.id,
+          existingSignature: executionResult.existingSignature,
+        });
+
+        // Release lock and return
+        await executionLockService.releaseLock(rule.id);
+        lockAcquired = false;
+
+        return {
+          success: true,
+          executionId: executionResult.id,
+          message: 'Execution already in progress or completed',
+        };
+      }
+
+      const executionId = executionResult.id;
+      logger.info('Execution record created', { executionId });
+
+      // Step 3: Update rule status to TRIGGERED
+      await this.updateRuleStatus(rule.id, 'TRIGGERED', new Date());
+
+      // Step 4: Execute swap (mock for now - will implement swap logic later)
+      try {
+        await this.executeSwap(rule, executionId, marketData);
+
+        // Step 5: Mark execution as completed
+        await executionService.markExecutionCompleted(
+          executionId,
+          'mock-signature-' + executionId, // TODO: Real signature from Solana
+        );
+
+        // Step 6: Update rule back to ACTIVE (can trigger again after cooldown)
+        await this.updateRuleStatus(rule.id, 'ACTIVE', null);
+
+        logger.info('Rule execution completed successfully', {
+          ruleId: rule.id,
+          executionId,
+        });
+
+        return {
+          success: true,
+          executionId,
+          message: 'Execution completed successfully',
+        };
+      } catch (error) {
+        // Execution failed
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        logger.error('Execution failed', {
+          ruleId: rule.id,
+          executionId,
+          error: errorMessage,
+        });
+
+        // Mark execution as failed
+        await executionService.markExecutionFailed(executionId, errorMessage);
+
+        // Handle failure with DLQ
+        const dlqResult = await deadLetterQueueService.handleExecutionFailure(
+          executionId,
+          errorMessage,
+        );
+
+        if (dlqResult.movedToDLQ) {
+          logger.error('Execution moved to dead letter queue', {
+            executionId,
+            dlqId: dlqResult.dlqId,
+            retryCount: dlqResult.retryCount,
+          });
+
+          // Update rule to FAILED state
+          await this.updateRuleStatus(rule.id, 'FAILED', null);
+        } else {
+          // Not moved to DLQ yet, update rule to ACTIVE for retry
+          await this.updateRuleStatus(rule.id, 'ACTIVE', null);
+        }
+
+        return {
+          success: false,
+          executionId,
+          message: `Execution failed: ${errorMessage}`,
+        };
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      logger.error('Error in execution coordinator', {
+        ruleId: rule.id,
+        error: errorMessage,
+      });
+
+      return {
+        success: false,
+        executionId: 0,
+        message: `Execution error: ${errorMessage}`,
+      };
+    } finally {
+      // Always release lock
+      if (lockAcquired) {
+        try {
+          await executionLockService.releaseLock(rule.id);
+          logger.debug('Execution lock released', { ruleId: rule.id });
+        } catch (error) {
+          logger.error('Error releasing lock', {
+            ruleId: rule.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Execute swap transaction
+   * TODO: Implement actual Solana swap with Jupiter/Raydium
+   * For now: Mock implementation
+   */
+  private async executeSwap(
+    rule: RuleResponse,
+    executionId: number,
+    marketData: KalshiProbabilityData,
+  ): Promise<void> {
+    logger.info('Executing swap (MOCK)', {
+      ruleId: rule.id,
+      executionId,
+      triggerType: rule.trigger_type,
+      swapPercentage: rule.swap_percentage,
+      walletId: rule.automation_wallet_id,
+    });
+
+    // Mock delay to simulate swap execution
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // TODO: Implement actual swap logic:
+    // 1. Get wallet private key (using secure-key-handler)
+    // 2. Build swap transaction (Jupiter API)
+    // 3. Sign transaction
+    // 4. Send to Solana with blockhash management
+    // 5. Wait for confirmation
+    // 6. Update execution with transaction signature
+
+    logger.info('Swap executed successfully (MOCK)', {
+      executionId,
+      ruleId: rule.id,
+    });
+  }
+
+  /**
+   * Update rule status
+   */
+  private async updateRuleStatus(
+    ruleId: number,
+    status: string,
+    lastTriggeredAt: Date | null,
+  ): Promise<void> {
+    if (lastTriggeredAt) {
+      await query(
+        `UPDATE rules
+         SET status = $1, last_triggered_at = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [status, lastTriggeredAt, ruleId],
+      );
+    } else {
+      await query(
+        `UPDATE rules
+         SET status = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [status, ruleId],
+      );
+    }
+
+    logger.debug('Rule status updated', { ruleId, status });
+  }
+}
+
+// Export singleton instance
+export const executionCoordinatorService =
+  new ExecutionCoordinatorService();

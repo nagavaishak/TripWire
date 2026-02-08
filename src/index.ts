@@ -10,6 +10,7 @@ import { validateConfig } from './utils/config';
 import { authenticate } from './middleware/auth.middleware';
 import { userService } from './services/user.service';
 import { closeSolanaConnection } from './utils/solana';
+import { marketPollerService } from './services/market-poller.service';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,12 +31,20 @@ app.use(express.json({ limit: '10kb' })); // Request size limit for DDoS protect
 // Public routes (no authentication required)
 app.get('/health', async (_req, res) => {
   const dbHealthy = await testConnection();
+  const pollerStatus = marketPollerService.getStatus();
 
   res.json({
     status: dbHealthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     database: dbHealthy ? 'connected' : 'disconnected',
+    marketPoller: {
+      running: pollerStatus.isRunning,
+      paused: pollerStatus.isPaused,
+      lastPollTime: pollerStatus.lastPollTime,
+      pollCount: pollerStatus.pollCount,
+      errorCount: pollerStatus.errorCount,
+    },
   });
 });
 
@@ -142,6 +151,16 @@ async function startServer() {
 
     server = app.listen(PORT, () => {
       logger.info(`TripWire server running on port ${PORT}`);
+
+      // Start market poller after server is running
+      try {
+        marketPollerService.start();
+        logger.info('Market poller started');
+      } catch (error) {
+        logger.error('Failed to start market poller', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
   } catch (error) {
     logger.error('Failed to start server', {
@@ -172,8 +191,19 @@ async function shutdown(signal: string) {
   }
 
   try {
-    // TODO: When execution controller is implemented, wait for in-flight transactions
-    // await executionController.waitForInFlightExecutions();
+    // Stop market poller
+    try {
+      marketPollerService.stop();
+      logger.info('Market poller stopped');
+    } catch (error) {
+      logger.error('Error stopping market poller', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // TODO: Wait for in-flight executions to complete
+    // For now, give brief time for any active operations
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Close Solana connection
     closeSolanaConnection();
