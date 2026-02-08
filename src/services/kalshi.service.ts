@@ -1,50 +1,95 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import { Configuration, MarketApi } from 'kalshi-typescript';
 import logger from '../utils/logger';
 import {
-  KalshiMarketResponse,
   KalshiProbabilityData,
-  KalshiError,
-  KALSHI_API_BASE_URL,
-  KALSHI_STALENESS_THRESHOLD_MS,
+  KALSHI_API_BASE_URL_PRODUCTION,
+  KALSHI_API_BASE_URL_DEMO,
 } from '../types/kalshi';
 
+/**
+ * Kalshi Service with Official SDK
+ * Uses RSA-PSS authentication for secure API access
+ */
 export class KalshiService {
-  private client: AxiosInstance;
-  private apiKey: string;
+  private marketApi: MarketApi;
+  private config: Configuration;
+  private environment: 'demo' | 'production';
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.KALSHI_API_KEY || '';
+  constructor(params?: {
+    apiKeyId?: string;
+    privateKeyPem?: string;
+    privateKeyPath?: string;
+    environment?: 'demo' | 'production';
+  }) {
+    // Get credentials from params or environment
+    const apiKeyId = params?.apiKeyId || process.env.KALSHI_API_KEY_ID || '';
+    const privateKeyPem =
+      params?.privateKeyPem || process.env.KALSHI_PRIVATE_KEY || '';
+    const privateKeyPath =
+      params?.privateKeyPath || process.env.KALSHI_PRIVATE_KEY_PATH || '';
+    this.environment =
+      params?.environment ||
+      (process.env.KALSHI_ENVIRONMENT as 'demo' | 'production') ||
+      'production';
 
-    if (!this.apiKey) {
-      logger.warn('KALSHI_API_KEY not configured');
+    // Validate credentials
+    if (!apiKeyId) {
+      logger.warn('KALSHI_API_KEY_ID not configured - API calls will fail');
     }
 
-    this.client = axios.create({
-      baseURL: KALSHI_API_BASE_URL,
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.apiKey && { Authorization: `Bearer ${this.apiKey}` }),
-      },
+    if (!privateKeyPem && !privateKeyPath) {
+      logger.warn(
+        'KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not configured - API calls will fail',
+      );
+    }
+
+    // Determine base URL
+    const basePath =
+      this.environment === 'demo'
+        ? KALSHI_API_BASE_URL_DEMO
+        : KALSHI_API_BASE_URL_PRODUCTION;
+
+    // Configure SDK with RSA authentication
+    this.config = new Configuration({
+      apiKey: apiKeyId,
+      privateKeyPem: privateKeyPem || undefined,
+      privateKeyPath: privateKeyPath || undefined,
+      basePath,
+    });
+
+    this.marketApi = new MarketApi(this.config);
+
+    logger.info('Kalshi service initialized', {
+      environment: this.environment,
+      basePath,
+      hasApiKey: !!apiKeyId,
+      hasPrivateKey: !!(privateKeyPem || privateKeyPath),
     });
   }
 
   /**
    * Fetch current probability for a market
-   * @param marketId - Kalshi market ticker
+   * @param marketTicker - Kalshi market ticker (e.g., "INXD-24FEB28-B4500")
    * @returns Probability data with staleness validation
    */
-  async fetchProbability(marketId: string): Promise<KalshiProbabilityData> {
+  async fetchProbability(
+    marketTicker: string,
+  ): Promise<KalshiProbabilityData> {
     const maxRetries = 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        logger.info('Fetching Kalshi market data', { marketId, attempt });
+        logger.info('Fetching Kalshi market data', {
+          marketTicker,
+          attempt,
+          environment: this.environment,
+        });
 
-        const response = await this.client.get<KalshiMarketResponse>(
-          `/markets/${marketId}`,
-        );
+        // Use official SDK to fetch market
+        const response = await this.marketApi.getMarket({
+          marketTicker,
+        });
 
         // Validate response structure
         if (!response.data?.market) {
@@ -70,25 +115,24 @@ export class KalshiService {
 
         const timestamp = new Date();
 
-        // Note: Kalshi doesn't provide data timestamp in market endpoint
-        // We use fetch time as proxy, but validate market is active
+        // Validate market is still active (not settled/closed)
+        this.validateMarketActive(market);
+
         const data: KalshiProbabilityData = {
           marketId: market.ticker,
           probability,
           timestamp,
           lastPrice: market.last_price,
-          volume: market.volume,
-          openInterest: market.open_interest,
+          volume: market.volume || 0,
+          openInterest: market.open_interest || 0,
         };
 
-        // Validate market is still active (not settled/closed)
-        this.validateMarketActive(market);
-
         logger.info('Successfully fetched Kalshi probability', {
-          marketId,
+          marketTicker,
           probability,
           lastPrice: market.last_price,
           volume: market.volume,
+          status: market.status,
         });
 
         return data;
@@ -105,7 +149,7 @@ export class KalshiService {
 
     // All retries exhausted
     logger.error('Failed to fetch Kalshi probability after all retries', {
-      marketId,
+      marketTicker,
       error: lastError?.message,
     });
     throw lastError || new Error('Failed to fetch Kalshi probability');
@@ -147,28 +191,45 @@ export class KalshiService {
   /**
    * Handle errors with proper logging and classification
    */
-  private handleError(error: unknown, attempt: number, maxRetries: number): Error {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<KalshiError>;
+  private handleError(
+    error: unknown,
+    attempt: number,
+    maxRetries: number,
+  ): Error {
+    // SDK throws axios errors
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as any;
 
       if (axiosError.response) {
         // Server responded with error status
         const status = axiosError.response.status;
         const message =
-          axiosError.response.data?.error?.message || axiosError.message;
+          axiosError.response.data?.error?.message ||
+          axiosError.response.data?.message ||
+          axiosError.message;
 
         logger.error('Kalshi API error response', {
           status,
           message,
           attempt,
           maxRetries,
+          environment: this.environment,
         });
 
-        // Don't retry on client errors (4xx)
+        // Don't retry on client errors (4xx) - likely auth or invalid request
         if (status >= 400 && status < 500) {
+          if (status === 401) {
+            throw new Error(
+              'Kalshi authentication failed - check API key and private key',
+            );
+          }
+          if (status === 404) {
+            throw new Error('Kalshi market not found');
+          }
           throw new Error(`Kalshi API error (${status}): ${message}`);
         }
 
+        // Retry on 5xx server errors
         return new Error(`Kalshi API error (${status}): ${message}`);
       } else if (axiosError.request) {
         // Request made but no response received (network error)
@@ -207,18 +268,19 @@ export class KalshiService {
   }
 
   /**
-   * Validate response schema
+   * Get current environment
    */
-  private validateMarketResponse(response: any): response is KalshiMarketResponse {
-    return (
-      response &&
-      typeof response === 'object' &&
-      'market' in response &&
-      response.market &&
-      typeof response.market === 'object' &&
-      'ticker' in response.market &&
-      'last_price' in response.market &&
-      typeof response.market.last_price === 'number'
+  getEnvironment(): 'demo' | 'production' {
+    return this.environment;
+  }
+
+  /**
+   * Check if service is properly configured
+   */
+  isConfigured(): boolean {
+    return !!(
+      this.config.apiKey &&
+      (this.config.privateKeyPem || this.config.privateKeyPath)
     );
   }
 }

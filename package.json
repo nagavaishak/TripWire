@@ -31,6 +31,7 @@
     "axios": "^1.13.4",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
+    "kalshi-typescript": "^3.6.0",
     "pg": "^8.18.0",
     "winston": "^3.19.0"
   },

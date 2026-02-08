@@ -10,7 +10,11 @@ export const CONFIG = {
   // Database
   DATABASE_MAX_CONNECTIONS: parseInt(process.env.DATABASE_MAX_CONNECTIONS || '10', 10),
 
-  // Kalshi polling
+  // Kalshi API
+  KALSHI_API_KEY_ID: process.env.KALSHI_API_KEY_ID || '',
+  KALSHI_PRIVATE_KEY: process.env.KALSHI_PRIVATE_KEY || '',
+  KALSHI_PRIVATE_KEY_PATH: process.env.KALSHI_PRIVATE_KEY_PATH || '',
+  KALSHI_ENVIRONMENT: (process.env.KALSHI_ENVIRONMENT || 'production') as 'demo' | 'production',
   KALSHI_POLL_INTERVAL_MS: parseInt(process.env.KALSHI_POLL_INTERVAL_MS || '900000', 10), // 15 minutes
   KALSHI_MOCK_MODE: process.env.KALSHI_MOCK_MODE === 'true',
 
@@ -82,6 +86,16 @@ export function validateConfig(): void {
   // API key for authentication
   if (!CONFIG.API_KEY) {
     errors.push('API_KEY is required for authentication');
+  }
+
+  // Kalshi API validation (warn only, not critical for startup)
+  if (!CONFIG.KALSHI_MOCK_MODE) {
+    if (!CONFIG.KALSHI_API_KEY_ID) {
+      console.warn('WARNING: KALSHI_API_KEY_ID not set - Kalshi API calls will fail');
+    }
+    if (!CONFIG.KALSHI_PRIVATE_KEY && !CONFIG.KALSHI_PRIVATE_KEY_PATH) {
+      console.warn('WARNING: KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not set - Kalshi API calls will fail');
+    }
   }
 
   // Commitment level validation (P0)
