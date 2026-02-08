@@ -70,8 +70,8 @@ export class KalshiService {
 
         const timestamp = new Date();
 
-        // Check for staleness - Kalshi doesn't provide timestamp in market data,
-        // so we use the current time and assume data is fresh if API call succeeded
+        // Note: Kalshi doesn't provide data timestamp in market endpoint
+        // We use fetch time as proxy, but validate market is active
         const data: KalshiProbabilityData = {
           marketId: market.ticker,
           probability,
@@ -81,8 +81,8 @@ export class KalshiService {
           openInterest: market.open_interest,
         };
 
-        // Validate staleness (check if market is still active)
-        this.validateFreshness(data);
+        // Validate market is still active (not settled/closed)
+        this.validateMarketActive(market);
 
         logger.info('Successfully fetched Kalshi probability', {
           marketId,
@@ -112,18 +112,35 @@ export class KalshiService {
   }
 
   /**
-   * Validate that data is not stale
+   * Validate that market is still active and not settled/closed
+   * FIXED: Previous implementation had circular logic (set timestamp to now, then check if now is stale)
+   * This actually validates market status instead
    */
-  private validateFreshness(data: KalshiProbabilityData): void {
-    const now = Date.now();
-    const dataTime = data.timestamp.getTime();
-    const ageMs = now - dataTime;
-
-    if (ageMs > KALSHI_STALENESS_THRESHOLD_MS) {
-      const ageMinutes = Math.floor(ageMs / 60000);
+  private validateMarketActive(market: any): void {
+    // Check if market status indicates it's closed or settled
+    if (market.status && !['active', 'open'].includes(market.status.toLowerCase())) {
       throw new Error(
-        `Kalshi data is stale: ${ageMinutes} minutes old (threshold: 30 minutes)`,
+        `Kalshi market is not active: status=${market.status}. Cannot use for rule evaluation.`,
       );
+    }
+
+    // Check if market has close_time and it has passed
+    if (market.close_time) {
+      const closeTime = new Date(market.close_time).getTime();
+      const now = Date.now();
+      if (now > closeTime) {
+        throw new Error(
+          `Kalshi market has closed at ${market.close_time}. Cannot use for rule evaluation.`,
+        );
+      }
+    }
+
+    // Sanity check: if volume is 0 and open_interest is 0, market might be inactive
+    if (market.volume === 0 && market.open_interest === 0) {
+      logger.warn('Kalshi market has zero volume and open interest', {
+        marketId: market.ticker,
+      });
+      // Don't throw - this might be a new market. Just log warning.
     }
   }
 
