@@ -109,9 +109,8 @@ app.post('/api/auth/register', async (req, res) => {
 // Protected routes - require authentication
 app.use('/api', authenticate); // All /api/* routes now require Bearer token
 
-// TODO: Add actual API endpoints here (rules, wallets, etc.)
+// Test endpoint to verify authentication
 app.get('/api/me', (req, res) => {
-  // Test endpoint to verify authentication
   res.json({
     user: {
       id: req.user!.id,
@@ -120,6 +119,10 @@ app.get('/api/me', (req, res) => {
     },
   });
 });
+
+// API Routes
+import rulesRoutes from './routes/rules.routes';
+app.use('/api/rules', rulesRoutes);
 
 // Error handling
 app.use(errorHandler);
