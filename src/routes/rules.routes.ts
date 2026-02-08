@@ -116,7 +116,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parseInt(String(req.params.id));
 
     if (isNaN(ruleId)) {
       res.status(400).json({
@@ -158,7 +158,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parseInt(String(req.params.id));
 
     if (isNaN(ruleId)) {
       res.status(400).json({
@@ -227,7 +227,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parseInt(String(req.params.id));
 
     if (isNaN(ruleId)) {
       res.status(400).json({

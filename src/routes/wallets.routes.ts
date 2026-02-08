@@ -87,7 +87,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const walletId = parseInt(req.params.id);
+    const walletId = parseInt(String(req.params.id));
     const includeBalance = req.query.includeBalance !== 'false'; // Default true
 
     if (isNaN(walletId)) {
@@ -134,7 +134,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.get('/:id/balance', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const walletId = parseInt(req.params.id);
+    const walletId = parseInt(String(req.params.id));
 
     if (isNaN(walletId)) {
       res.status(400).json({
@@ -183,7 +183,7 @@ router.get('/:id/balance', async (req: Request, res: Response) => {
 router.get('/:id/stats', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const walletId = parseInt(req.params.id);
+    const walletId = parseInt(String(req.params.id));
 
     if (isNaN(walletId)) {
       res.status(400).json({
@@ -228,7 +228,7 @@ router.get('/:id/stats', async (req: Request, res: Response) => {
 router.post('/:id/withdraw', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const walletId = parseInt(req.params.id);
+    const walletId = parseInt(String(req.params.id));
 
     if (isNaN(walletId)) {
       res.status(400).json({
