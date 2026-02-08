@@ -9,17 +9,20 @@ import {
 /**
  * Kalshi Service with Official SDK
  * Uses RSA-PSS authentication for secure API access
+ * Supports mock mode for development without real credentials
  */
 export class KalshiService {
-  private marketApi: MarketApi;
-  private config: Configuration;
+  private marketApi: MarketApi | null = null;
+  private config: Configuration | null = null;
   private environment: 'demo' | 'production';
+  private mockMode: boolean;
 
   constructor(params?: {
     apiKeyId?: string;
     privateKeyPem?: string;
     privateKeyPath?: string;
     environment?: 'demo' | 'production';
+    mockMode?: boolean;
   }) {
     // Get credentials from params or environment
     const apiKeyId = params?.apiKeyId || process.env.KALSHI_API_KEY_ID || '';
@@ -31,16 +34,32 @@ export class KalshiService {
       params?.environment ||
       (process.env.KALSHI_ENVIRONMENT as 'demo' | 'production') ||
       'production';
+    this.mockMode =
+      params?.mockMode ?? process.env.KALSHI_MOCK_MODE === 'true';
 
-    // Validate credentials
+    // Mock mode - skip SDK initialization
+    if (this.mockMode) {
+      logger.info('Kalshi service initialized in MOCK MODE', {
+        environment: this.environment,
+      });
+      return;
+    }
+
+    // Real mode - validate credentials
     if (!apiKeyId) {
-      logger.warn('KALSHI_API_KEY_ID not configured - API calls will fail');
+      logger.warn(
+        'KALSHI_API_KEY_ID not configured - using mock mode. Set KALSHI_MOCK_MODE=false when credentials are available.',
+      );
+      this.mockMode = true;
+      return;
     }
 
     if (!privateKeyPem && !privateKeyPath) {
       logger.warn(
-        'KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not configured - API calls will fail',
+        'KALSHI_PRIVATE_KEY or KALSHI_PRIVATE_KEY_PATH not configured - using mock mode. Set KALSHI_MOCK_MODE=false when credentials are available.',
       );
+      this.mockMode = true;
+      return;
     }
 
     // Determine base URL
@@ -59,7 +78,7 @@ export class KalshiService {
 
     this.marketApi = new MarketApi(this.config);
 
-    logger.info('Kalshi service initialized', {
+    logger.info('Kalshi service initialized with real API', {
       environment: this.environment,
       basePath,
       hasApiKey: !!apiKeyId,
@@ -75,6 +94,12 @@ export class KalshiService {
   async fetchProbability(
     marketTicker: string,
   ): Promise<KalshiProbabilityData> {
+    // Mock mode - return fake data
+    if (this.mockMode) {
+      return this.getMockProbability(marketTicker);
+    }
+
+    // Real API mode
     const maxRetries = 3;
     let lastError: Error | null = null;
 
@@ -87,7 +112,7 @@ export class KalshiService {
         });
 
         // Use official SDK to fetch market
-        const response = await this.marketApi.getMarket({
+        const response = await this.marketApi!.getMarket({
           marketTicker,
         });
 
@@ -153,6 +178,34 @@ export class KalshiService {
       error: lastError?.message,
     });
     throw lastError || new Error('Failed to fetch Kalshi probability');
+  }
+
+  /**
+   * Generate mock probability data for testing
+   * MOCK MODE ONLY
+   */
+  private getMockProbability(marketTicker: string): KalshiProbabilityData {
+    // Generate deterministic but varying mock data based on ticker
+    const hash = marketTicker
+      .split('')
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const probability = 0.3 + (hash % 40) / 100; // Range: 0.30 to 0.70
+    const lastPrice = Math.round(probability * 100);
+
+    logger.info('Returning MOCK Kalshi probability', {
+      marketTicker,
+      probability,
+      note: 'Set KALSHI_MOCK_MODE=false to use real API',
+    });
+
+    return {
+      marketId: marketTicker,
+      probability,
+      timestamp: new Date(),
+      lastPrice,
+      volume: 10000 + (hash % 50000),
+      openInterest: 5000 + (hash % 20000),
+    };
   }
 
   /**
@@ -275,12 +328,22 @@ export class KalshiService {
   }
 
   /**
-   * Check if service is properly configured
+   * Check if service is in mock mode
+   */
+  isMockMode(): boolean {
+    return this.mockMode;
+  }
+
+  /**
+   * Check if service is properly configured with real credentials
    */
   isConfigured(): boolean {
+    if (this.mockMode) {
+      return false; // Mock mode = not configured with real credentials
+    }
     return !!(
-      this.config.apiKey &&
-      (this.config.privateKeyPem || this.config.privateKeyPath)
+      this.config?.apiKey &&
+      (this.config?.privateKeyPem || this.config?.privateKeyPath)
     );
   }
 }
