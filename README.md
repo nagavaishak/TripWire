@@ -4,27 +4,59 @@ Non-custodial automation system that converts Kalshi probability signals into au
 
 ## Setup
 
-1. Install dependencies:
+### 1. Install dependencies
 ```bash
 npm install
 ```
 
-2. Set up environment variables:
+### 2. Set up Supabase (Recommended)
+
+**Create a Supabase project:**
+1. Go to [supabase.com](https://supabase.com) and sign up/login
+2. Click "New Project"
+3. Choose a name (e.g., "tripwire"), set a strong database password
+4. Wait ~2 minutes for project to initialize
+
+**Get your connection string:**
+1. Go to Project Settings > Database
+2. Scroll to "Connection String" section
+3. Copy the "Connection string" (under "Nodejs" tab)
+4. It looks like: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
+
+### 3. Configure environment variables
 ```bash
 cp .env.example .env
-# Edit .env with your values
+# Edit .env and paste your Supabase connection string into DATABASE_URL
 ```
 
-3. Set up the database:
+**CRITICAL:** Generate a secure master encryption key:
 ```bash
-# Make sure PostgreSQL is running and DATABASE_URL is configured
+# Generate a random 32-byte hex key
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Copy output and paste into MASTER_ENCRYPTION_KEY in .env
+```
+
+### 4. Run database migrations
+```bash
 npm run migrate
 ```
 
-4. Start the development server:
+### 5. Start the development server
 ```bash
 npm run dev
 ```
+
+The server will start on http://localhost:3000
+
+**Need detailed setup help?** See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for a complete step-by-step guide with screenshots and troubleshooting.
+
+### Alternative: Local PostgreSQL
+
+If you prefer local PostgreSQL instead of Supabase:
+1. Install PostgreSQL locally
+2. Create database: `createdb tripwire`
+3. Update `DATABASE_URL` in `.env` to: `postgresql://localhost:5432/tripwire`
+4. Run migrations: `npm run migrate`
 
 ## Available Scripts
 
@@ -58,10 +90,23 @@ See `migrations/001_initial_schema.sql` for the complete schema.
 
 - **Runtime**: Node.js with TypeScript
 - **Framework**: Express
-- **Database**: PostgreSQL with pg driver
+- **Database**: PostgreSQL (Supabase recommended) with pg driver
 - **Logging**: Winston
 - **Blockchain**: Solana (via @solana/web3.js)
 - **APIs**: Kalshi v2, Jupiter v6
+
+## Production Features
+
+TripWire implements production-grade safety features:
+
+- **P0 Security**: Idempotent execution, distributed locks, replay protection, memory-safe key handling, dead letter queue
+- **Rule Engine**: Conditional execution based on Kalshi probability thresholds
+- **Wallet Management**: Encrypted automation wallets with AES-256-GCM
+- **Real Swaps**: Jupiter v6 integration for optimal Solana DEX routing
+- **Comprehensive Tests**: Integration tests for API endpoints and execution flow
+- **Mock Mode**: Develop without API credentials using deterministic mock data
+
+All advanced PostgreSQL features (advisory locks, transactions, constraints) work perfectly with Supabase.
 
 ## Project Structure
 

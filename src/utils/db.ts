@@ -14,7 +14,7 @@ export function getPool(): Pool {
 
     pool = new Pool({
       connectionString,
-      max: 10, // Reduced from 20 for Railway compatibility
+      max: 10, // Optimized for Supabase free tier and managed hosting
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
     });
