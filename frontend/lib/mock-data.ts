@@ -65,4 +65,4 @@ export const mockMetrics = {
   timestamp: new Date(),
 };
 
-export const MOCK_MODE = false; // Set to false when backend works
+export const MOCK_MODE = true; // Set to false when backend works
