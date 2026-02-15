@@ -12,11 +12,17 @@ export function getPool(): Pool {
       throw new Error('DATABASE_URL environment variable is not set');
     }
 
+    // Use SSL only for remote databases (Supabase, etc.)
+    const isLocalDb = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+
     pool = new Pool({
       connectionString,
       max: 10, // Optimized for Supabase free tier and managed hosting
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
+      ssl: isLocalDb ? false : {
+        rejectUnauthorized: false, // Accept self-signed certificates for Supabase
+      },
     });
 
     pool.on('error', (err) => {

@@ -7,6 +7,8 @@ import { deadLetterQueueService } from './dead-letter-queue.service';
 import { jupiterSwapService } from './jupiter-swap.service';
 import { walletService } from './wallet.service';
 import { secretsManager } from './secrets-manager.service';
+import { webhookService } from './webhook.service';
+import { monitoringService } from './monitoring.service';
 import { withSecureKey } from '../utils/secure-key-handler';
 import { getTokenMint, getStablecoinMint, SwapParams } from '../types/swap';
 import { query } from '../utils/db';
@@ -108,6 +110,40 @@ export class ExecutionCoordinatorService {
       // Step 3: Update rule status to TRIGGERED
       await this.updateRuleStatus(rule.id, 'TRIGGERED', new Date());
 
+      // Notify: Rule triggered
+      await webhookService.notify({
+        event: 'RULE_TRIGGERED',
+        userId: rule.user_id,
+        timestamp: new Date(),
+        data: {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          marketId: marketData.marketId,
+          probability: marketData.probability,
+          threshold: rule.threshold_probability,
+        },
+      });
+
+      // Notify: Execution started
+      await webhookService.notify({
+        event: 'EXECUTION_STARTED',
+        userId: rule.user_id,
+        timestamp: new Date(),
+        data: {
+          ruleId: rule.id,
+          ruleName: rule.name,
+          executionId,
+          marketId: marketData.marketId,
+        },
+      });
+
+      // Log execution start for monitoring
+      await monitoringService.logExecution({
+        ruleId: rule.id,
+        executionId,
+        status: 'started',
+      });
+
       // Step 4: Execute swap via Jupiter
       try {
         const signature = await this.executeSwap(rule, executionId, marketData);
@@ -121,6 +157,27 @@ export class ExecutionCoordinatorService {
         logger.info('Rule execution completed successfully', {
           ruleId: rule.id,
           executionId,
+        });
+
+        // Notify: Execution succeeded
+        await webhookService.notify({
+          event: 'EXECUTION_SUCCEEDED',
+          userId: rule.user_id,
+          timestamp: new Date(),
+          data: {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            executionId,
+            marketId: marketData.marketId,
+            txSignature: signature,
+          },
+        });
+
+        // Log execution success for monitoring
+        await monitoringService.logExecution({
+          ruleId: rule.id,
+          executionId,
+          status: 'succeeded',
         });
 
         return {
@@ -142,6 +199,28 @@ export class ExecutionCoordinatorService {
         // Mark execution as failed
         await executionService.markExecutionFailed(executionId, errorMessage);
 
+        // Notify: Execution failed
+        await webhookService.notify({
+          event: 'EXECUTION_FAILED',
+          userId: rule.user_id,
+          timestamp: new Date(),
+          data: {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            executionId,
+            marketId: marketData.marketId,
+            errorMessage,
+          },
+        });
+
+        // Log execution failure for monitoring
+        await monitoringService.logExecution({
+          ruleId: rule.id,
+          executionId,
+          status: 'failed',
+          error: errorMessage,
+        });
+
         // Handle failure with DLQ
         const dlqResult = await deadLetterQueueService.handleExecutionFailure(
           executionId,
@@ -157,6 +236,19 @@ export class ExecutionCoordinatorService {
 
           // Update rule to FAILED state
           await this.updateRuleStatus(rule.id, 'FAILED', null);
+
+          // Notify: Rule paused due to failures
+          await webhookService.notify({
+            event: 'RULE_PAUSED',
+            userId: rule.user_id,
+            timestamp: new Date(),
+            data: {
+              ruleId: rule.id,
+              ruleName: rule.name,
+              errorMessage,
+              retryCount: dlqResult.retryCount,
+            },
+          });
         } else {
           // Not moved to DLQ yet, update rule to ACTIVE for retry
           await this.updateRuleStatus(rule.id, 'ACTIVE', null);

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
+import cors from 'cors';
 import { Server } from 'http';
 import logger from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
@@ -25,6 +26,12 @@ try {
   });
   process.exit(1);
 }
+
+// Enable CORS for frontend
+app.use(cors({
+  origin: ['http://localhost:3001', 'http://127.0.0.1:3001'],
+  credentials: true,
+}));
 
 app.use(express.json({ limit: '10kb' })); // Request size limit for DDoS protection
 
@@ -132,8 +139,13 @@ app.get('/api/me', (req, res) => {
 // API Routes
 import rulesRoutes from './routes/rules.routes';
 import walletsRoutes from './routes/wallets.routes';
+import webhooksRoutes from './routes/webhooks.routes';
+import adminRoutes from './routes/admin.routes';
+
 app.use('/api/rules', rulesRoutes);
 app.use('/api/wallets', walletsRoutes);
+app.use('/api/webhooks', webhooksRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Error handling
 app.use(errorHandler);

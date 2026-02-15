@@ -14,6 +14,7 @@ import { CreateRuleRequest } from '../../src/types/rules';
  * Deletes all test data in reverse dependency order
  */
 export async function cleanupTestDatabase(): Promise<void> {
+  // Delete in reverse dependency order to avoid foreign key violations
   await query('DELETE FROM dead_letter_queue', []);
   await query('DELETE FROM secrets_audit', []);
   await query('DELETE FROM execution_locks', []);
@@ -21,8 +22,8 @@ export async function cleanupTestDatabase(): Promise<void> {
   await query('DELETE FROM executions', []);
   await query('DELETE FROM rules', []);
   await query('DELETE FROM automation_wallets', []);
+  await query("DELETE FROM audit_log WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%test%')", []);
   await query("DELETE FROM users WHERE email LIKE '%test%'", []);
-  await query("DELETE FROM audit_log WHERE event_type = 'TEST'", []);
 }
 
 /**

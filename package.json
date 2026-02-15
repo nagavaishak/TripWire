@@ -28,7 +28,11 @@
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",
     "@solana/web3.js": "^1.98.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
     "axios": "^1.13.4",
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
     "kalshi-typescript": "^3.6.0",
