@@ -1,6 +1,17 @@
 # TripWire
 
-Non-custodial automation system that converts Kalshi probability signals into automated Solana DeFi swaps.
+Probability oracle and execution infrastructure for Solana - aggregating prediction market data across platforms and enabling automated on-chain actions based on real-world event probabilities.
+
+## What TripWire Does
+
+**Dual-layer infrastructure:**
+1. **Oracle Layer:** Aggregates and normalizes prediction market probabilities across Kalshi, Polymarket, and emerging platforms
+2. **Execution Layer:** Enables automated on-chain actions when probability thresholds are crossed
+
+**For protocols:** Consume probability feeds via API or integrate full execution infrastructure
+**For users:** Set event-driven rules that execute automatically (e.g., "If recession probability > 70%, swap SOL to USDC")
+
+---
 
 ## Setup
 
@@ -48,15 +59,61 @@ npm run dev
 
 The server will start on http://localhost:3000
 
-**Need detailed setup help?** See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) for a complete step-by-step guide with screenshots and troubleshooting.
+**Need detailed setup help?** See [SUPABASE_SETUP.md](./SUPABASE_SETUP.md)
 
-### Alternative: Local PostgreSQL
+---
 
-If you prefer local PostgreSQL instead of Supabase:
-1. Install PostgreSQL locally
-2. Create database: `createdb tripwire`
-3. Update `DATABASE_URL` in `.env` to: `postgresql://localhost:5432/tripwire`
-4. Run migrations: `npm run migrate`
+## Architecture
+
+### Oracle Layer
+- **Multi-platform aggregation:** Pulls real-time probabilities from Kalshi, Polymarket, and other prediction markets
+- **Data normalization:** Computes volume-weighted consensus probabilities across sources
+- **Quality validation:** Staleness detection (>30min), manipulation protection (>15% jumps trigger delays)
+- **Developer API:** REST endpoints exposing normalized probability feeds
+
+### Execution Layer
+- **Automation wallets:** Non-custodial execution using encrypted keypair storage (AES-256-GCM)
+- **Rule engine:** 7-state persistent state machine with cooldown enforcement and idempotency guarantees
+- **Pre-flight checks:** Balance validation, slippage protection, transaction cap enforcement ($10K max)
+- **Jupiter integration:** Best-route Solana swaps with retry logic and error classification
+
+### Tech Stack
+- **Runtime:** Node.js with TypeScript
+- **Framework:** Express
+- **Database:** PostgreSQL (Supabase or local)
+- **Blockchain:** Solana (via @solana/web3.js)
+- **APIs:** Kalshi v2, Polymarket CLOB, Jupiter v6
+
+---
+
+## Database Schema
+
+**5 core tables:**
+- `users` - Protocol/user accounts
+- `automation_wallets` - Encrypted keypairs for execution
+- `rules` - Event-triggered automation rules
+- `executions` - On-chain transaction history
+- `market_snapshots` - Cross-platform probability data
+
+See `migrations/001_initial_schema.sql` for complete schema.
+
+---
+
+## API Endpoints
+
+### Oracle API (Probability Feeds)
+- `GET /api/oracle/markets` - List available markets across platforms
+- `GET /api/oracle/probability/:market_id` - Get consensus probability for specific event
+
+### Automation API
+- `POST /api/wallets` - Create automation wallet
+- `POST /api/rules` - Create event-triggered rule
+- `GET /api/executions` - View execution history
+
+### System
+- `GET /health` - Infrastructure health check
+
+---
 
 ## Available Scripts
 
@@ -69,53 +126,80 @@ If you prefer local PostgreSQL instead of Supabase:
 - `npm run format` - Format code with Prettier
 - `npm test` - Run tests
 
-## Database Schema
-
-The database consists of 5 main tables:
-
-- **users** - User accounts
-- **automation_wallets** - Dedicated wallets for automation (encrypted keypairs)
-- **rules** - Automation rules with trigger conditions
-- **executions** - Execution history for each triggered rule
-- **market_snapshots** - Historical Kalshi market data
-
-See `migrations/001_initial_schema.sql` for the complete schema.
-
-## API Endpoints
-
-### Health Check
-- `GET /health` - Server and database health status
-
-## Architecture
-
-- **Runtime**: Node.js with TypeScript
-- **Framework**: Express
-- **Database**: PostgreSQL (Supabase recommended) with pg driver
-- **Logging**: Winston
-- **Blockchain**: Solana (via @solana/web3.js)
-- **APIs**: Kalshi v2, Jupiter v6
+---
 
 ## Production Features
 
-TripWire implements production-grade safety features:
+**Oracle Infrastructure:**
+- Multi-platform data aggregation with consensus calculation
+- Quality validation (staleness, manipulation detection)
+- Developer-facing REST API
+- Real-time probability updates
 
-- **P0 Security**: Idempotent execution, distributed locks, replay protection, memory-safe key handling, dead letter queue
-- **Rule Engine**: Conditional execution based on Kalshi probability thresholds
-- **Wallet Management**: Encrypted automation wallets with AES-256-GCM
-- **Real Swaps**: Jupiter v6 integration for optimal Solana DEX routing
-- **Comprehensive Tests**: Integration tests for API endpoints and execution flow
-- **Mock Mode**: Develop without API credentials using deterministic mock data
+**Execution Infrastructure:**
+- Idempotent execution with distributed locks
+- Non-custodial automation wallet system
+- Jupiter v6 integration for optimal routing
+- Comprehensive error handling with dead letter queue
+- Replay protection and memory-safe key handling
 
-All advanced PostgreSQL features (advisory locks, transactions, constraints) work perfectly with Supabase.
+**Security:**
+- AES-256-GCM encryption for private keys
+- User-controlled fund withdrawal (cryptographic signature verification)
+- $10K per-transaction cap
+- All executions auditable on-chain
+
+---
+
+## Integration Examples
+
+### Protocol Integration (Oracle API)
+```typescript
+// Get current recession probability across all platforms
+const response = await fetch('https://api.tripwire.app/oracle/probability/US_RECESSION_2026');
+const data = await response.json();
+
+// Returns:
+// {
+//   market_id: "US_RECESSION_2026",
+//   consensus_probability: 0.64,
+//   sources: [
+//     { platform: "kalshi", probability: 0.65, volume: "$2.3M" },
+//     { platform: "polymarket", probability: 0.62, volume: "$5.1M" }
+//   ],
+//   updated_at: "2026-02-16T10:15:00Z"
+// }
+
+// Use in your protocol's logic
+if (data.consensus_probability > 0.70) {
+  await executeProtocolAction();
+}
+```
+
+### User Automation (Full Stack)
+```typescript
+// Create rule via API
+const rule = await createRule({
+  market_id: "US_RECESSION_2026",
+  threshold: 0.70,
+  action: "SWAP_TO_USDC",
+  percentage: 50
+});
+
+// TripWire monitors consensus probability
+// Executes automatically when threshold crossed
+// User receives notification + on-chain tx hash
+```
+
+---
 
 ## Project Structure
-
 ```
 src/
   controllers/    - API route handlers
   middleware/     - Express middleware
   models/         - Database models
-  services/       - Business logic
+  services/       - Business logic (oracle, execution, encryption)
   scripts/        - Utility scripts
   types/          - TypeScript type definitions
   utils/          - Helper functions
@@ -123,3 +207,17 @@ migrations/       - Database migrations
 tests/            - Test files
 docs/             - Documentation
 ```
+
+---
+
+## License
+
+MIT - Open-source infrastructure for the Solana ecosystem
+
+---
+
+## Links
+
+**Grant Application:** Superteam Ireland + Kalshi Builders Program
+**Documentation:** [Coming Soon]
+**Demo:** [Coming Soon]
