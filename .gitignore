@@ -5,5 +5,3 @@ dist/
 coverage/
 .DS_Store
 
-# Internal documentation - not for public repo
-docs/
