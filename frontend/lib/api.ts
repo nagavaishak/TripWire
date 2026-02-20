@@ -101,6 +101,26 @@ export const apiClient = {
     return data;
   },
 
+  // Markets (cross-platform comparison)
+  async searchMarkets(query: string) {
+    const { data } = await api.get('/api/markets/search', { params: { q: query } });
+    return data;
+  },
+
+  async compareMarkets(kalshiId: string, polyId: string) {
+    const { data } = await api.get('/api/markets/compare', {
+      params: { kalshi: kalshiId, poly: polyId },
+    });
+    return data.comparison;
+  },
+
+  async getArbitrageOpportunities(threshold?: number) {
+    const { data } = await api.get('/api/markets/arbitrage', {
+      params: threshold != null ? { threshold } : {},
+    });
+    return data;
+  },
+
   // Admin
   async getMetrics() {
     if (MOCK_MODE) return mockMetrics;

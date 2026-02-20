@@ -40,6 +40,11 @@ export const CONFIG = {
   MASTER_ENCRYPTION_KEY: process.env.MASTER_ENCRYPTION_KEY || '',
   API_KEY: process.env.API_KEY || '',
 
+  // Polymarket API
+  POLYMARKET_API_URL: process.env.POLYMARKET_API_URL || 'https://clob.polymarket.com',
+  POLYMARKET_MOCK_MODE: process.env.POLYMARKET_MOCK_MODE === 'true',
+  POLYMARKET_TIMEOUT_MS: parseInt(process.env.POLYMARKET_TIMEOUT_MS || '10000', 10),
+
   // External services
   JUPITER_MOCK_MODE: process.env.JUPITER_MOCK_MODE === 'true',
   JUPITER_API_URL: process.env.JUPITER_API_URL || 'https://quote-api.jup.ag/v6',

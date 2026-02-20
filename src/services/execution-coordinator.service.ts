@@ -144,9 +144,13 @@ export class ExecutionCoordinatorService {
         status: 'started',
       });
 
-      // Step 4: Execute swap via Jupiter
+      // Step 4: Execute swap via Jupiter (Kalshi) or log stub (Polymarket)
       try {
-        const signature = await this.executeSwap(rule, executionId, marketData);
+        const platform = (rule as any).platform ?? 'kalshi';
+        const signature =
+          platform === 'polymarket'
+            ? await this.executePolymarketStub(rule, executionId)
+            : await this.executeSwap(rule, executionId, marketData);
 
         // Step 5: Mark execution as completed
         await executionService.markExecutionCompleted(executionId, signature);
@@ -408,6 +412,38 @@ export class ExecutionCoordinatorService {
     );
 
     return swapResult.signature!;
+  }
+
+  /**
+   * Polymarket execution stub — records intent but does NOT place a real order.
+   * Real Polymarket order placement requires Polygon PoS, USDC on Polygon,
+   * and ECDSA signing against the CLOB API. This is deferred to Phase 2.
+   */
+  private async executePolymarketStub(
+    rule: RuleResponse,
+    executionId: number,
+  ): Promise<string> {
+    const stubMessage =
+      'Polymarket execution stub — Polygon/USDC trading deferred to Phase 2';
+
+    logger.info(stubMessage, {
+      ruleId: rule.id,
+      executionId,
+      note: 'Real Polymarket orders require Polygon wallet + USDC + ECDSA signing',
+    });
+
+    // Mark execution with STUB status
+    await query(
+      `UPDATE executions
+       SET status = 'STUB',
+           error_message = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      ['Polymarket Polygon execution not yet implemented', executionId],
+    );
+
+    // Return a deterministic stub "signature" for traceability
+    return `POLYMARKET_STUB_${executionId}_${Date.now()}`;
   }
 
   /**

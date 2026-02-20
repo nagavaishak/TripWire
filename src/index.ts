@@ -12,6 +12,7 @@ import { authenticate } from './middleware/auth.middleware';
 import { userService } from './services/user.service';
 import { closeSolanaConnection } from './utils/solana';
 import { marketPollerService } from './services/market-poller.service';
+import { polymarketService } from './services/polymarket.service';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -141,11 +142,13 @@ import rulesRoutes from './routes/rules.routes';
 import walletsRoutes from './routes/wallets.routes';
 import webhooksRoutes from './routes/webhooks.routes';
 import adminRoutes from './routes/admin.routes';
+import marketsRoutes from './routes/markets.routes';
 
 app.use('/api/rules', rulesRoutes);
 app.use('/api/wallets', walletsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/markets', marketsRoutes);
 
 // Error handling
 app.use(errorHandler);
@@ -173,6 +176,10 @@ async function startServer() {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+
+      logger.info('Polymarket service ready', {
+        mode: polymarketService.isMockMode() ? 'MOCK' : 'PUBLIC_API',
+      });
     });
   } catch (error) {
     logger.error('Failed to start server', {
