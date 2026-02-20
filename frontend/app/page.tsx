@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Activity,
   AlertCircle,
+  ArrowRightLeft,
   CheckCircle2,
   Clock,
   Plus,
@@ -96,6 +97,12 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold">TripWire</h1>
           </div>
           <nav className="flex items-center space-x-4">
+            <Link href="/markets">
+              <Button variant="ghost" size="sm">
+                <ArrowRightLeft className="w-4 h-4 mr-2" />
+                Markets
+              </Button>
+            </Link>
             <Link href="/wallets">
               <Button variant="ghost" size="sm">
                 <Wallet className="w-4 h-4 mr-2" />
@@ -191,7 +198,12 @@ export default function Dashboard() {
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div>
-                        <CardTitle className="text-lg">{rule.name}</CardTitle>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          {rule.name}
+                          {rule.platform === 'polymarket' && (
+                            <Badge variant="outline" className="text-xs font-normal">Polymarket</Badge>
+                          )}
+                        </CardTitle>
                         <CardDescription className="mt-1">Market: {rule.kalshi_market_id}</CardDescription>
                       </div>
                       <Badge variant={rule.status === 'ACTIVE' ? 'default' : rule.status === 'TRIGGERED' ? 'secondary' : 'destructive'}>
@@ -230,12 +242,20 @@ export default function Dashboard() {
                 <AlertCircle className="w-12 h-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold mb-2">No rules yet</h3>
                 <p className="text-muted-foreground mb-4">Create your first automation rule to get started</p>
-                <Link href="/rules/new">
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Rule
-                  </Button>
-                </Link>
+                <div className="flex gap-3">
+                  <Link href="/rules/new">
+                    <Button>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Rule
+                    </Button>
+                  </Link>
+                  <Link href="/markets">
+                    <Button variant="outline">
+                      <ArrowRightLeft className="w-4 h-4 mr-2" />
+                      Browse Markets
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           )}

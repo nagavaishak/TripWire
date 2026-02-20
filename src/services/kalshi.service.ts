@@ -397,6 +397,82 @@ export class KalshiService {
   }
 
   /**
+   * Fetch a list of markets from the public Kalshi API
+   * @param limit - Number of markets to fetch (default 20)
+   */
+  async fetchMarkets(limit = 20): Promise<any[]> {
+    if (this.mockMode) {
+      return [
+        { ticker: 'INXD-26DEC29', title: 'S&P 500 above 4500 on Dec 29?', status: 'active', volume: 100000 },
+        { ticker: 'USRECESSION-2026', title: 'US recession in 2026?', status: 'active', volume: 50000 },
+      ];
+    }
+
+    const baseUrl =
+      this.environment === 'demo' ? KALSHI_API_BASE_URL_DEMO : KALSHI_API_BASE_URL_PRODUCTION;
+
+    try {
+      const response = await axios.get(`${baseUrl}/markets`, {
+        params: { limit },
+        headers: { Accept: 'application/json' },
+        timeout: 10000,
+      });
+
+      return response.data?.markets ?? [];
+    } catch (error) {
+      logger.error('Failed to fetch Kalshi markets list', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Search Kalshi markets by keyword
+   * @param query - Search string to match against market titles/tickers
+   */
+  async searchMarkets(query: string): Promise<any[]> {
+    if (this.mockMode) {
+      return [
+        { ticker: 'INXD-26DEC29', title: 'S&P 500 above 4500 on Dec 29?', status: 'active', volume: 100000 },
+        { ticker: 'USRECESSION-2026', title: 'US recession in 2026?', status: 'active', volume: 50000 },
+      ].filter(
+        (m) =>
+          m.title.toLowerCase().includes(query.toLowerCase()) ||
+          m.ticker.toLowerCase().includes(query.toLowerCase()),
+      );
+    }
+
+    const baseUrl =
+      this.environment === 'demo' ? KALSHI_API_BASE_URL_DEMO : KALSHI_API_BASE_URL_PRODUCTION;
+
+    try {
+      logger.info('Searching Kalshi markets', { query });
+
+      const response = await axios.get(`${baseUrl}/markets`, {
+        params: { limit: 100 },
+        headers: { Accept: 'application/json' },
+        timeout: 10000,
+      });
+
+      const markets: any[] = response.data?.markets ?? [];
+      const lowerQuery = query.toLowerCase();
+
+      return markets.filter((m: any) => {
+        const title = (m.title ?? m.event_title ?? m.ticker ?? '').toLowerCase();
+        const ticker = (m.ticker ?? '').toLowerCase();
+        return title.includes(lowerQuery) || ticker.includes(lowerQuery);
+      });
+    } catch (error) {
+      logger.error('Failed to search Kalshi markets', {
+        query,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
    * Get current environment
    */
   getEnvironment(): 'demo' | 'production' {
