@@ -3,6 +3,9 @@ import logger from '../utils/logger';
 import {
   PolymarketProbabilityData,
   PolymarketMarketData,
+  PolymarketOrderbook,
+  PolymarketPosition,
+  PolymarketOrderParams,
   POLYMARKET_API_BASE_URL,
 } from '../types/polymarket';
 import { CONFIG } from '../utils/config';
@@ -389,6 +392,128 @@ export class PolymarketService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Fetch level-2 orderbook for a specific token
+   */
+  async getOrderbook(tokenId: string): Promise<PolymarketOrderbook> {
+    if (this.mockMode) {
+      return this.getMockOrderbook(tokenId);
+    }
+
+    try {
+      const response = await axios.get(`${this.baseUrl}/books`, {
+        params: { token_id: tokenId },
+        headers: { Accept: 'application/json' },
+        timeout: this.timeoutMs,
+      });
+
+      const book = response.data;
+      const bids = (book?.bids ?? []).map((b: any) => ({
+        price: parseFloat(b.price),
+        size: parseFloat(b.size),
+      }));
+      const asks = (book?.asks ?? []).map((a: any) => ({
+        price: parseFloat(a.price),
+        size: parseFloat(a.size),
+      }));
+
+      const bestBid = bids[0]?.price ?? 0;
+      const bestAsk = asks[0]?.price ?? 1;
+
+      return {
+        tokenId,
+        bids,
+        asks,
+        spread: bestAsk - bestBid,
+        midpoint: (bestBid + bestAsk) / 2,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      logger.warn('Failed to fetch Polymarket orderbook, using mock', {
+        tokenId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return this.getMockOrderbook(tokenId);
+    }
+  }
+
+  /**
+   * Get current mid-price (implied probability) for a market
+   */
+  async getCurrentPrice(conditionId: string): Promise<number> {
+    const prob = await this.fetchProbability(conditionId);
+    return (prob.bestBid + prob.bestAsk) / 2;
+  }
+
+  /**
+   * Place an order on Polymarket CLOB (stub — requires private key signing)
+   * In production this would sign a ClobClient order with the user's wallet.
+   */
+  async placeOrder(params: PolymarketOrderParams): Promise<{ orderId: string; status: string }> {
+    logger.info('Polymarket placeOrder called (stub)', params);
+    // Stub: returns a mock order ID
+    // Real impl: use @polymarket/clob-client with user L1/L2 auth
+    return {
+      orderId: `mock-order-${Date.now()}`,
+      status: 'STUB_NOT_EXECUTED',
+    };
+  }
+
+  /**
+   * Get positions for a wallet address (stub — requires Polymarket data API)
+   */
+  async getPositions(address: string): Promise<PolymarketPosition[]> {
+    if (this.mockMode) {
+      return this.getMockPositions(address);
+    }
+    logger.info('Polymarket getPositions called (stub)', { address });
+    // Real impl: query Polymarket data API or on-chain CTF positions
+    return this.getMockPositions(address);
+  }
+
+  private getMockOrderbook(tokenId: string): PolymarketOrderbook {
+    const hash = tokenId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const mid = 0.35 + (hash % 30) / 100;
+    const spread = 0.02;
+    return {
+      tokenId,
+      bids: [
+        { price: mid - spread / 2, size: 500 },
+        { price: mid - spread, size: 1200 },
+      ],
+      asks: [
+        { price: mid + spread / 2, size: 600 },
+        { price: mid + spread, size: 1000 },
+      ],
+      spread,
+      midpoint: mid,
+      timestamp: new Date(),
+    };
+  }
+
+  private getMockPositions(address: string): PolymarketPosition[] {
+    return [
+      {
+        conditionId: '0xmock001',
+        tokenId: `${address.slice(0, 6)}-token-yes`,
+        outcome: 'Yes',
+        size: 100,
+        avgPrice: 0.42,
+        currentPrice: 0.55,
+        pnl: 13,
+      },
+      {
+        conditionId: '0xmock003',
+        tokenId: `${address.slice(0, 6)}-token-no`,
+        outcome: 'No',
+        size: 50,
+        avgPrice: 0.61,
+        currentPrice: 0.48,
+        pnl: -6.5,
+      },
+    ];
   }
 
   isMockMode(): boolean {

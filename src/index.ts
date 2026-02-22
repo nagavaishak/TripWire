@@ -143,12 +143,18 @@ import walletsRoutes from './routes/wallets.routes';
 import webhooksRoutes from './routes/webhooks.routes';
 import adminRoutes from './routes/admin.routes';
 import marketsRoutes from './routes/markets.routes';
+import compareRoutes from './routes/compare.routes';
+import tradeRoutes from './routes/trade.routes';
+import portfolioRoutes from './routes/portfolio.routes';
 
 app.use('/api/rules', rulesRoutes);
 app.use('/api/wallets', walletsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/markets', marketsRoutes);
+app.use('/api/compare', compareRoutes);
+app.use('/api/trade', tradeRoutes);
+app.use('/api/portfolio', portfolioRoutes);
 
 // Error handling
 app.use(errorHandler);
