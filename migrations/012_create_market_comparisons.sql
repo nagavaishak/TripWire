@@ -22,6 +22,3 @@ CREATE INDEX IF NOT EXISTS idx_market_comparisons_arbitrage
 CREATE INDEX IF NOT EXISTS idx_market_comparisons_created
   ON market_comparisons(created_at DESC);
 
-INSERT INTO schema_migrations (version, description) VALUES
-  ('012', 'create_market_comparisons')
-ON CONFLICT (version) DO NOTHING;
