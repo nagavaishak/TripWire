@@ -121,6 +121,44 @@ export const apiClient = {
     return data;
   },
 
+  // Compare (cross-platform auto-match)
+  async compareSearch(query: string) {
+    const { data } = await api.get('/api/compare/search', { params: { q: query } });
+    return data;
+  },
+
+  async compareArbitrage(threshold?: number) {
+    const { data } = await api.get('/api/compare/arbitrage', {
+      params: threshold != null ? { threshold } : {},
+    });
+    return data;
+  },
+
+  async compareByKalshiId(kalshiId: string) {
+    const { data } = await api.get(`/api/compare/${encodeURIComponent(kalshiId)}`);
+    return data;
+  },
+
+  // Portfolio
+  async getPortfolio() {
+    const { data } = await api.get('/api/portfolio');
+    return data;
+  },
+
+  // Trade execution
+  async executeTrade(params: {
+    platform: 'kalshi' | 'polymarket';
+    market_id: string;
+    outcome: 'YES' | 'NO';
+    side: 'BUY' | 'SELL';
+    size: number;
+    price: number;
+    wallet_address?: string;
+  }) {
+    const { data } = await api.post('/api/trade', params);
+    return data;
+  },
+
   // Admin
   async getMetrics() {
     if (MOCK_MODE) return mockMetrics;

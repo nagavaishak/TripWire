@@ -11,6 +11,7 @@ import {
   Activity,
   AlertCircle,
   ArrowRightLeft,
+  BarChart2,
   CheckCircle2,
   Clock,
   Plus,
@@ -96,11 +97,23 @@ export default function Dashboard() {
             </div>
             <h1 className="text-xl font-bold">TripWire</h1>
           </div>
-          <nav className="flex items-center space-x-4">
+          <nav className="flex items-center space-x-1">
             <Link href="/markets">
               <Button variant="ghost" size="sm">
                 <ArrowRightLeft className="w-4 h-4 mr-2" />
                 Markets
+              </Button>
+            </Link>
+            <Link href="/compare">
+              <Button variant="ghost" size="sm">
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Compare
+              </Button>
+            </Link>
+            <Link href="/portfolio">
+              <Button variant="ghost" size="sm">
+                <BarChart2 className="w-4 h-4 mr-2" />
+                Portfolio
               </Button>
             </Link>
             <Link href="/wallets">
