@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "TripWire - Automate DeFi with Real-World Events",
-  description: "Automate your DeFi portfolio based on prediction markets",
+  title: "Attention Markets",
+  description: "Real-time attention oracle for Solana prediction markets",
 };
 
 export default function RootLayout({

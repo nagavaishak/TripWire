@@ -1,289 +1,176 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api';
-import { MOCK_MODE } from '@/lib/mock-data';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Activity,
-  AlertCircle,
-  ArrowRightLeft,
-  BarChart2,
-  CheckCircle2,
-  Clock,
-  Plus,
-  TrendingUp,
-  Wallet,
-  Zap,
-} from 'lucide-react';
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Activity, TrendingUp, Youtube, Zap } from 'lucide-react';
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+async function fetchScores() {
+  const res = await fetch(`${API}/api/attention`);
+  if (!res.ok) throw new Error('Failed to fetch scores');
+  return res.json();
+}
+
+async function fetchHistory(topic: string) {
+  const res = await fetch(`${API}/api/attention/${encodeURIComponent(topic)}/history?hours=24`);
+  if (!res.ok) throw new Error('Failed to fetch history');
+  return res.json();
+}
+
+function DoABar({ value, max }: { value: number; max: number }) {
+  const pct = Math.min((value / max) * 100, 100);
+  return (
+    <div className="w-full bg-muted rounded-full h-2 mt-3">
+      <div
+        className="h-2 rounded-full bg-primary transition-all duration-700"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+function SparkLine({ data }: { data: { time: number; value: number }[] }) {
+  if (!data || data.length < 2) return null;
+  const vals = data.map(d => d.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const W = 200, H = 40;
+  const pts = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * W;
+    const y = H - ((d.value - min) / range) * H;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-10 mt-2 opacity-60">
+      <polyline points={pts} fill="none" stroke="hsl(var(--primary))" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function TopicCard({ topic, score, timestamp }: { topic: string; score: number; timestamp: number }) {
+  const { data: histData } = useQuery({
+    queryKey: ['history', topic],
+    queryFn: () => fetchHistory(topic),
+    refetchInterval: 300000,
+  });
+
+  const history: { time: number; value: number }[] = histData?.data || [];
+  const age = timestamp ? Math.floor((Date.now() / 1000 - timestamp) / 60) : null;
+
+  return (
+    <Card className="hover:border-primary/50 transition-colors">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-base font-semibold">{topic}</CardTitle>
+        <Badge variant="outline" className="text-xs">
+          {age !== null ? `${age}m ago` : '—'}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="text-4xl font-bold tabular-nums">{score.toFixed(1)}</span>
+            <span className="text-muted-foreground text-sm ml-1">DoA</span>
+          </div>
+          <TrendingUp className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <DoABar value={score} max={100} />
+        <SparkLine data={history} />
+        <p className="text-xs text-muted-foreground mt-2">
+          {history.length > 0 ? `${history.length} data points (24h)` : 'Building history…'}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
-  const router = useRouter();
-  const [apiKey, setApiKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    const key = localStorage.getItem('tripwire_api_key');
-    setApiKey(key);
-  }, []);
-
-  const { data: rules, isLoading: rulesLoading } = useQuery({
-    queryKey: ['rules'],
-    queryFn: apiClient.getRules,
-    enabled: MOCK_MODE || !!apiKey,
+  const { data, isLoading, isError, dataUpdatedAt } = useQuery({
+    queryKey: ['attention-scores'],
+    queryFn: fetchScores,
+    refetchInterval: 300000, // re-fetch every 5 min
   });
 
-  const { data: wallets, isLoading: walletsLoading } = useQuery({
-    queryKey: ['wallets'],
-    queryFn: apiClient.getWallets,
-    enabled: MOCK_MODE || !!apiKey,
-  });
-
-  const { data: metrics } = useQuery({
-    queryKey: ['metrics'],
-    queryFn: apiClient.getMetrics,
-    refetchInterval: MOCK_MODE ? false : 30000,
-  });
-
-  if (!MOCK_MODE && !apiKey) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Zap className="w-6 h-6 text-primary" />
-            </div>
-            <CardTitle className="text-2xl">Welcome to TripWire</CardTitle>
-            <CardDescription>
-              Automate your DeFi portfolio based on real-world events
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={() => router.push('/auth/login')}
-            >
-              Sign In
-            </Button>
-            <div className="text-center text-sm text-muted-foreground">
-              Don't have an account?{' '}
-              <Link href="/auth/register" className="text-primary hover:underline">
-                Sign up
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const activeRules = rules?.filter((r: any) => r.status === 'ACTIVE') || [];
-  const totalExecutions = metrics?.executions?.total || 0;
-  const successRate = metrics?.executions?.successRate || 0;
+  const topics: Record<string, { value: number; timestamp: number }> = data?.topics || {};
+  const topicList = Object.entries(topics).sort((a, b) => b[1].value - a[1].value);
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Header */}
       <header className="border-b">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
               <Zap className="w-5 h-5 text-primary" />
             </div>
-            <h1 className="text-xl font-bold">TripWire</h1>
+            <h1 className="text-xl font-bold">Attention Markets</h1>
           </div>
-          <nav className="flex items-center space-x-1">
-            <Link href="/markets">
-              <Button variant="ghost" size="sm">
-                <ArrowRightLeft className="w-4 h-4 mr-2" />
-                Markets
-              </Button>
-            </Link>
-            <Link href="/compare">
-              <Button variant="ghost" size="sm">
-                <TrendingUp className="w-4 h-4 mr-2" />
-                Compare
-              </Button>
-            </Link>
-            <Link href="/portfolio">
-              <Button variant="ghost" size="sm">
-                <BarChart2 className="w-4 h-4 mr-2" />
-                Portfolio
-              </Button>
-            </Link>
-            <Link href="/wallets">
-              <Button variant="ghost" size="sm">
-                <Wallet className="w-4 h-4 mr-2" />
-                Wallets
-              </Button>
-            </Link>
-            <Link href="/settings">
-              <Button variant="ghost" size="sm">Settings</Button>
-            </Link>
-          </nav>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Activity className="w-3.5 h-3.5 text-green-500" />
+            <span>Oracle live · updates every 5 min</span>
+          </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Rules</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {rulesLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{activeRules.length}</div>
-                  <p className="text-xs text-muted-foreground">{rules?.length || 0} total</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Executions</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalExecutions}</div>
-              <p className="text-xs text-muted-foreground">Last 24 hours</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{successRate.toFixed(1)}%</div>
-              <p className="text-xs text-muted-foreground">{metrics?.executions?.succeeded || 0} succeeded</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Wallets</CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {walletsLoading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{wallets?.length || 0}</div>
-                  <p className="text-xs text-muted-foreground">Automation wallets</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
+        {/* Tagline */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-bold">Active Rules</h2>
-            <Link href="/rules/new">
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Rule
-              </Button>
-            </Link>
-          </div>
-
-          {rulesLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : rules && rules.length > 0 ? (
-            <div className="grid gap-4">
-              {rules.map((rule: any) => (
-                <Card key={rule.id} className="hover:border-primary/50 transition-colors">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          {rule.name}
-                          {rule.platform === 'polymarket' && (
-                            <Badge variant="outline" className="text-xs font-normal">Polymarket</Badge>
-                          )}
-                        </CardTitle>
-                        <CardDescription className="mt-1">Market: {rule.kalshi_market_id}</CardDescription>
-                      </div>
-                      <Badge variant={rule.status === 'ACTIVE' ? 'default' : rule.status === 'TRIGGERED' ? 'secondary' : 'destructive'}>
-                        {rule.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Trigger</p>
-                        <p className="font-medium">
-                          {rule.condition_type === 'THRESHOLD_ABOVE' ? '>' : '<'} {(rule.threshold_probability * 100).toFixed(0)}%
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Action</p>
-                        <p className="font-medium">{rule.trigger_type === 'SWAP_TO_STABLECOIN' ? 'Swap to USDC' : 'Swap to SOL'}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Amount</p>
-                        <p className="font-medium">{rule.swap_percentage}%</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Cooldown</p>
-                        <p className="font-medium">{rule.cooldown_hours}h</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <AlertCircle className="w-12 h-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-semibold mb-2">No rules yet</h3>
-                <p className="text-muted-foreground mb-4">Create your first automation rule to get started</p>
-                <div className="flex gap-3">
-                  <Link href="/rules/new">
-                    <Button>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Rule
-                    </Button>
-                  </Link>
-                  <Link href="/markets">
-                    <Button variant="outline">
-                      <ArrowRightLeft className="w-4 h-4 mr-2" />
-                      Browse Markets
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <h2 className="text-2xl font-bold mb-1">Dollar of Attention Index</h2>
+          <p className="text-muted-foreground text-sm">
+            Real-time attention scores (0–100) derived from YouTube engagement · feeds on-chain Switchboard oracle
+          </p>
         </div>
 
-        <div>
-          <h2 className="text-2xl font-bold mb-4">Recent Activity</h2>
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <Clock className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No recent executions</h3>
-              <p className="text-muted-foreground">Activity will appear here when rules trigger</p>
+        {/* Score cards */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <Skeleton className="h-44 w-full" />
+            <Skeleton className="h-44 w-full" />
+          </div>
+        ) : isError ? (
+          <Card className="border-destructive/50 mb-8">
+            <CardContent className="py-8 text-center text-muted-foreground">
+              Could not reach oracle backend at <code className="text-xs">{API}</code>
             </CardContent>
           </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {topicList.map(([topic, { value, timestamp }]) => (
+              <TopicCard key={topic} topic={topic} score={value} timestamp={timestamp} />
+            ))}
+          </div>
+        )}
+
+        {/* Data source */}
+        <div className="border rounded-lg p-4 flex items-center gap-3">
+          <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center shrink-0">
+            <Youtube className="w-4 h-4 text-red-500" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">YouTube Data API v3</p>
+            <p className="text-xs text-muted-foreground">50 videos · view-weighted engagement · 7-day window</p>
+          </div>
+          <Badge variant="outline" className="ml-auto text-green-600 border-green-500/30 bg-green-500/10">
+            Live
+          </Badge>
         </div>
+
+        {/* API reference */}
+        <div className="mt-6 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">Oracle endpoints</p>
+          <p><code className="bg-muted px-1 rounded">{API}/api/attention</code> — all topics</p>
+          <p><code className="bg-muted px-1 rounded">{API}/api/attention/Solana</code> — latest score</p>
+          <p><code className="bg-muted px-1 rounded">{API}/api/attention/Solana/history?hours=24</code> — time series</p>
+        </div>
+
+        {dataUpdatedAt > 0 && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            UI last fetched: {new Date(dataUpdatedAt).toLocaleTimeString()}
+          </p>
+        )}
       </main>
     </div>
   );
