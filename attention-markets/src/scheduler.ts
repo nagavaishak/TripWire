@@ -1,13 +1,16 @@
 import cron from 'node-cron';
 import { AttentionIndexComputer } from './index/computer';
+import { SwitchboardOracle } from './oracle/switchboard';
 
 export class AttentionScheduler {
     private computer: AttentionIndexComputer;
+    private oracle: SwitchboardOracle;
     private topics: string[];
     private interval: string;
 
-    constructor() {
+    constructor(oracle: SwitchboardOracle) {
         this.computer = new AttentionIndexComputer();
+        this.oracle = oracle;
         this.topics = (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
         this.interval = process.env.ATTENTION_UPDATE_INTERVAL_MINUTES || '5';
     }
@@ -34,13 +37,21 @@ export class AttentionScheduler {
         console.log(`\n⏰ [${updateStart.toISOString()}] Update cycle starting...`);
         console.log('─'.repeat(60));
 
+        const scores: Record<string, number> = {};
+
         for (const topic of this.topics) {
             try {
                 const doa = await this.computer.compute(topic);
+                scores[topic] = doa;
                 console.log(`✓ ${topic.padEnd(15)} → ${doa.toFixed(2)} DoA`);
             } catch (error: any) {
                 console.error(`✗ ${topic.padEnd(15)} → FAILED: ${error.message}`);
             }
+        }
+
+        // Push scores on-chain (no-op if SOLANA_PRIVATE_KEY not set)
+        if (Object.keys(scores).length > 0) {
+            await this.oracle.pushAll(scores);
         }
 
         const duration = Date.now() - updateStart.getTime();
