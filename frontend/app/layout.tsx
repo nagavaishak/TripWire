@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "TripWire — Prediction Market Intelligence",
-  description: "Compare Kalshi and Polymarket side-by-side. Spot arbitrage instantly.",
+  title: "TripWire — Attention Oracle",
+  description: "Real-time attention data for prediction markets. YouTube + Google Trends + Farcaster → DoA score on Solana.",
 };
 
 export default function RootLayout({

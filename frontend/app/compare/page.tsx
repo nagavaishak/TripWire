@@ -1,214 +1,205 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ArrowLeft,
-  ArrowRightLeft,
-  RefreshCw,
-  Search,
-  TrendingUp,
-  Zap,
-} from 'lucide-react';
+import { oracleClient, type TopicScore } from '@/lib/api';
+import { ArrowLeft, ArrowRightLeft, RefreshCw, Zap } from 'lucide-react';
 import Link from 'next/link';
+import { Suspense } from 'react';
 
-interface ComparisonResult {
-  event: string;
-  kalshi: { probability: number; volume: number; market_id: string } | null;
-  polymarket: { probability: number; volume24h: number; market_id: string } | null;
-  spread_pct: number;
-  best_platform: 'kalshi' | 'polymarket';
-  arbitrage_opportunity: boolean;
-  consensus_probability: number;
-  timestamp: string;
-}
+const PRESET_TOPICS = ['Solana', 'AI', 'Bitcoin', 'Ethereum', 'DeFi'];
 
-function ProbBar({ value, color }: { value: number; color: string }) {
+function SourceRow({
+  label,
+  aWeight,
+  bWeight,
+  color,
+}: {
+  label: string;
+  aWeight: number;
+  bWeight: number;
+  color: string;
+}) {
+  const aVal = (aWeight * 100).toFixed(0);
+  const bVal = (bWeight * 100).toFixed(0);
+  const winner = aWeight > bWeight ? 'a' : aWeight < bWeight ? 'b' : 'tie';
   return (
-    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-      <div
-        className={`h-2 rounded-full transition-all ${color}`}
-        style={{ width: `${Math.min(100, Math.max(0, value * 100))}%` }}
-      />
+    <div className="flex items-center gap-3 text-sm">
+      <span className={`w-20 text-right font-mono tabular-nums ${winner === 'a' ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+        {aVal}%
+      </span>
+      <div className="flex-1 text-center text-xs text-muted-foreground">{label}</div>
+      <span className={`w-20 text-left font-mono tabular-nums ${winner === 'b' ? 'text-foreground font-semibold' : 'text-muted-foreground'}`}>
+        {bVal}%
+      </span>
     </div>
   );
 }
 
-function ComparisonCard({ item, onTrade }: { item: ComparisonResult; onTrade?: (item: ComparisonResult, platform: string) => void }) {
-  const kProb = item.kalshi?.probability ?? null;
-  const pProb = item.polymarket?.probability ?? null;
-  const showArb = item.arbitrage_opportunity;
-  const bestIsPoly = item.best_platform === 'polymarket';
+function ScoreDiff({ a, b }: { a: number; b: number }) {
+  const diff = Math.abs(a - b);
+  const leader = a > b ? 'left' : a < b ? 'right' : 'tie';
+  return (
+    <div className="text-center py-4 border-y">
+      <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">Spread</p>
+      <p className="text-3xl font-bold tabular-nums">{diff.toFixed(1)}</p>
+      {leader !== 'tie' ? (
+        <p className="text-xs text-muted-foreground mt-1">
+          {leader === 'left' ? 'Left' : 'Right'} topic leads
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground mt-1">Tied</p>
+      )}
+    </div>
+  );
+}
+
+function ComparePanel({
+  topicA,
+  topicB,
+}: {
+  topicA: string;
+  topicB: string;
+}) {
+  const { data: a, isLoading: aLoading, isError: aError } = useQuery<TopicScore>({
+    queryKey: ['topic', topicA],
+    queryFn: () => oracleClient.getTopic(topicA),
+    refetchInterval: 5 * 60 * 1000,
+    enabled: !!topicA,
+  });
+
+  const { data: b, isLoading: bLoading, isError: bError } = useQuery<TopicScore>({
+    queryKey: ['topic', topicB],
+    queryFn: () => oracleClient.getTopic(topicB),
+    refetchInterval: 5 * 60 * 1000,
+    enabled: !!topicB,
+  });
+
+  const loading = aLoading || bLoading;
 
   return (
-    <Card className={`transition-all hover:shadow-md ${showArb ? 'border-red-400/60' : 'border-border'}`}>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base font-semibold leading-tight line-clamp-2">
-            {item.event}
-          </CardTitle>
-          <div className="flex flex-col gap-1 shrink-0">
-            {showArb && (
-              <Badge className="bg-red-500 text-white text-xs px-2 py-0.5">
-                ARBITRAGE {item.spread_pct.toFixed(1)}%
-              </Badge>
-            )}
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Consensus: {(item.consensus_probability * 100).toFixed(1)}%
-        </p>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          {/* Kalshi side */}
-          <div className={`rounded-lg p-3 border ${!bestIsPoly && item.kalshi ? 'border-green-500/50 bg-green-500/5' : 'border-border bg-muted/30'}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Kalshi</span>
-              {!bestIsPoly && item.kalshi && (
-                <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0">BEST</Badge>
-              )}
-            </div>
-            {item.kalshi ? (
-              <>
-                <p className="text-xl font-bold">{(kProb! * 100).toFixed(1)}%</p>
-                <ProbBar value={kProb!} color="bg-blue-500" />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Vol: ${(item.kalshi.volume / 1000).toFixed(0)}k
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">No market</p>
-            )}
+    <Card>
+      <CardContent className="pt-6 space-y-6">
+        {/* Score row */}
+        <div className="grid grid-cols-3 gap-4 items-center">
+          <div className="text-center">
+            <p className="text-sm font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+              {topicA}
+            </p>
+            {aLoading ? (
+              <Skeleton className="h-12 w-20 mx-auto" />
+            ) : aError ? (
+              <p className="text-destructive text-sm">Error</p>
+            ) : a ? (
+              <p className="text-5xl font-bold tabular-nums">{a.value.toFixed(1)}</p>
+            ) : null}
           </div>
 
-          {/* Polymarket side */}
-          <div className={`rounded-lg p-3 border ${bestIsPoly && item.polymarket ? 'border-green-500/50 bg-green-500/5' : 'border-border bg-muted/30'}`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Polymarket</span>
-              {bestIsPoly && item.polymarket && (
-                <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0">BEST</Badge>
-              )}
-            </div>
-            {item.polymarket ? (
-              <>
-                <p className="text-xl font-bold">{(pProb! * 100).toFixed(1)}%</p>
-                <ProbBar value={pProb!} color="bg-purple-500" />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Vol24h: ${(item.polymarket.volume24h / 1000).toFixed(0)}k
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">No market</p>
-            )}
+          <div className="text-center text-muted-foreground">
+            <ArrowRightLeft className="w-6 h-6 mx-auto" />
+            <p className="text-xs mt-1">DoA</p>
+          </div>
+
+          <div className="text-center">
+            <p className="text-sm font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+              {topicB}
+            </p>
+            {bLoading ? (
+              <Skeleton className="h-12 w-20 mx-auto" />
+            ) : bError ? (
+              <p className="text-destructive text-sm">Error</p>
+            ) : b ? (
+              <p className="text-5xl font-bold tabular-nums">{b.value.toFixed(1)}</p>
+            ) : null}
           </div>
         </div>
 
-        {/* Trade buttons */}
-        {(item.kalshi || item.polymarket) && onTrade && (
-          <div className="flex gap-2">
-            {item.kalshi && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 text-xs"
-                onClick={() => onTrade(item, 'kalshi')}
-              >
-                Trade Kalshi
-              </Button>
-            )}
-            {item.polymarket && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 text-xs"
-                onClick={() => onTrade(item, 'polymarket')}
-              >
-                Trade Poly
-              </Button>
-            )}
-          </div>
+        {/* Progress bars */}
+        {!loading && a && b && (
+          <>
+            <div className="grid grid-cols-3 gap-4 items-center">
+              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-3 rounded-full bg-blue-500 transition-all"
+                  style={{ width: `${a.value}%` }}
+                />
+              </div>
+              <div />
+              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                <div
+                  className="h-3 rounded-full bg-purple-500 transition-all"
+                  style={{ width: `${b.value}%` }}
+                />
+              </div>
+            </div>
+
+            <ScoreDiff a={a.value} b={b.value} />
+
+            {/* Source breakdown */}
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide text-center">
+                Source weights
+              </p>
+              <SourceRow
+                label="Google Trends"
+                aWeight={a.weights.google_trends}
+                bWeight={b.weights.google_trends}
+                color="bg-blue-500"
+              />
+              <SourceRow
+                label="Farcaster"
+                aWeight={a.weights.farcaster}
+                bWeight={b.weights.farcaster}
+                color="bg-purple-500"
+              />
+              <SourceRow
+                label="YouTube"
+                aWeight={a.weights.youtube}
+                bWeight={b.weights.youtube}
+                color="bg-red-500"
+              />
+            </div>
+
+            {/* Timestamps */}
+            <div className="grid grid-cols-2 gap-4 text-xs text-muted-foreground text-center pt-2 border-t">
+              <p>
+                Updated{' '}
+                {Math.round((Date.now() / 1000 - a.timestamp) / 60)}m ago
+              </p>
+              <p>
+                Updated{' '}
+                {Math.round((Date.now() / 1000 - b.timestamp) / 60)}m ago
+              </p>
+            </div>
+          </>
         )}
       </CardContent>
     </Card>
   );
 }
 
-export default function ComparePage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [submittedQuery, setSubmittedQuery] = useState('');
-  const [filterArb, setFilterArb] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+function ComparePageInner() {
+  const params = useSearchParams();
+  const [topicA, setTopicA] = useState(params.get('a') || 'Solana');
+  const [topicB, setTopicB] = useState(params.get('b') || 'AI');
+  const [inputA, setInputA] = useState(topicA);
+  const [inputB, setInputB] = useState(topicB);
 
-  // Auto-refresh every 60 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (submittedQuery) {
-        setLastRefresh(new Date());
-      }
-    }, 60000);
-    return () => clearInterval(timer);
-  }, [submittedQuery]);
-
-  const {
-    data: searchData,
-    isFetching,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: ['compare-search', submittedQuery, lastRefresh],
-    queryFn: () => apiClient.compareSearch(submittedQuery),
-    enabled: submittedQuery.length > 0,
-    staleTime: 55000,
-  });
-
-  const {
-    data: arbData,
-    isFetching: arbFetching,
-  } = useQuery({
-    queryKey: ['compare-arbitrage'],
-    queryFn: () => apiClient.compareArbitrage(),
-    staleTime: 55000,
-  });
-
-  const handleSearch = useCallback(() => {
-    if (searchQuery.trim()) {
-      setSubmittedQuery(searchQuery.trim());
-    }
-  }, [searchQuery]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSearch();
+  const handleCompare = () => {
+    if (inputA.trim()) setTopicA(inputA.trim());
+    if (inputB.trim()) setTopicB(inputB.trim());
   };
-
-  const handleTrade = (item: ComparisonResult, platform: string) => {
-    const marketId =
-      platform === 'kalshi' ? item.kalshi?.market_id : item.polymarket?.market_id;
-    alert(`Trade on ${platform.toUpperCase()}: ${marketId}\n(Trade execution in stub mode)`);
-  };
-
-  const comparisons: ComparisonResult[] = searchData?.comparisons ?? [];
-  const arbOpportunities: ComparisonResult[] = arbData?.opportunities ?? [];
-
-  const displayed = submittedQuery
-    ? filterArb
-      ? comparisons.filter((c) => c.arbitrage_opportunity)
-      : comparisons
-    : arbOpportunities;
-
-  const arbCount = comparisons.filter((c) => c.arbitrage_opportunity).length;
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b">
+      <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/">
@@ -221,134 +212,97 @@ export default function ComparePage() {
               <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
                 <ArrowRightLeft className="w-5 h-5 text-primary" />
               </div>
-              <h1 className="text-xl font-bold">Compare Markets</h1>
+              <h1 className="text-xl font-bold">Compare Topics</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
             <RefreshCw className="w-3 h-3" />
-            Auto-refreshes every 60s
-          </div>
+            Auto-refreshes every 5 min
+          </p>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 space-y-6">
-        {/* Search bar */}
-        <div className="flex gap-2 max-w-2xl">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <main className="container mx-auto px-4 py-8 max-w-2xl space-y-6">
+        {/* Input row */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1 space-y-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Topic A</p>
             <Input
-              placeholder="Search markets (e.g. Federal Reserve, Bitcoin, election...)"
-              className="pl-9"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
+              value={inputA}
+              onChange={(e) => setInputA(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCompare()}
+              placeholder="e.g. Solana"
             />
           </div>
-          <Button onClick={handleSearch} disabled={!searchQuery.trim()}>
-            Search
+          <div className="pb-0.5">
+            <ArrowRightLeft className="w-5 h-5 text-muted-foreground" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Topic B</p>
+            <Input
+              value={inputB}
+              onChange={(e) => setInputB(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCompare()}
+              placeholder="e.g. AI"
+            />
+          </div>
+          <Button onClick={handleCompare} className="shrink-0">
+            Compare
           </Button>
-          {submittedQuery && (
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-          )}
         </div>
 
-        {/* Filter bar */}
-        {comparisons.length > 0 && (
-          <div className="flex items-center gap-3">
+        {/* Preset chips */}
+        <div className="flex flex-wrap gap-2">
+          {PRESET_TOPICS.map((t) => (
             <Button
-              variant={!filterArb ? 'default' : 'outline'}
+              key={t}
+              variant="outline"
               size="sm"
-              onClick={() => setFilterArb(false)}
+              className="text-xs h-7"
+              onClick={() => {
+                if (!topicA || topicA === topicB) {
+                  setInputA(t);
+                  setTopicA(t);
+                } else {
+                  setInputB(t);
+                  setTopicB(t);
+                }
+              }}
             >
-              All ({comparisons.length})
+              {t}
             </Button>
-            <Button
-              variant={filterArb ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setFilterArb(true)}
-              className={arbCount > 0 ? 'border-red-400' : ''}
-            >
-              Arbitrage ({arbCount})
-            </Button>
+          ))}
+        </div>
+
+        {/* Comparison panel */}
+        {topicA && topicB && <ComparePanel topicA={topicA} topicB={topicB} />}
+
+        {/* Links to history */}
+        {topicA && topicB && (
+          <div className="grid grid-cols-2 gap-3">
+            <Link href={`/portfolio?topic=${topicA}`}>
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
+                <Zap className="w-3.5 h-3.5" />
+                {topicA} History
+              </Button>
+            </Link>
+            <Link href={`/portfolio?topic=${topicB}`}>
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
+                <Zap className="w-3.5 h-3.5" />
+                {topicB} History
+              </Button>
+            </Link>
           </div>
-        )}
-
-        {/* Loading */}
-        {(isFetching || arbFetching) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Skeleton className="h-20 rounded-lg" />
-                    <Skeleton className="h-20 rounded-lg" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {/* Error */}
-        {isError && (
-          <Card className="border-destructive">
-            <CardContent className="py-8 text-center text-destructive">
-              Failed to load comparison data. Check your connection and try again.
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Results */}
-        {!isFetching && !isError && displayed.length > 0 && (
-          <>
-            {!submittedQuery && (
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-red-500" />
-                <h2 className="text-lg font-semibold">Arbitrage Opportunities</h2>
-                <Badge className="bg-red-500 text-white">{arbOpportunities.length}</Badge>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {displayed.map((item, i) => (
-                <ComparisonCard key={i} item={item} onTrade={handleTrade} />
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Empty state */}
-        {!isFetching && !isError && submittedQuery && comparisons.length === 0 && (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Search className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No markets found</h3>
-              <p className="text-muted-foreground">
-                Try a different search term like "Federal Reserve", "Bitcoin", or "election"
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* No search yet */}
-        {!submittedQuery && !arbFetching && arbOpportunities.length === 0 && (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-              <Zap className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Compare prediction markets</h3>
-              <p className="text-muted-foreground max-w-md">
-                Search for any event to see side-by-side prices from Kalshi and Polymarket.
-                Arbitrage opportunities are highlighted automatically.
-              </p>
-            </CardContent>
-          </Card>
         )}
       </main>
     </div>
+  );
+}
+
+export default function ComparePage() {
+  return (
+    <Suspense>
+      <ComparePageInner />
+    </Suspense>
   );
 }

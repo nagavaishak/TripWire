@@ -1,178 +1,45 @@
-import axios from 'axios';
-import { mockRules, mockWallets, mockMetrics, MOCK_MODE } from './mock-data';
+const ORACLE_URL =
+  process.env.NEXT_PUBLIC_ORACLE_URL ||
+  'https://attention-markets-api.onrender.com';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+export interface TopicScore {
+  value: number;       // 0–100 DoA score
+  timestamp: number;   // unix seconds
+  topic: string;
+  sources: string[];
+  weights: { youtube: number; google_trends: number; farcaster: number };
+}
 
-// Create axios instance
-export const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+export interface HistoryPoint {
+  time: number;
+  value: number;
+  components: { youtube: number; google_trends: number; farcaster: number };
+}
 
-// Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('tripwire_api_key');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+export interface TopicHistory {
+  topic: string;
+  hours: number;
+  sources: string[];
+  data: HistoryPoint[];
+}
 
-// API client functions
-export const apiClient = {
-  // Auth
-  async register(email: string, walletAddress: string) {
-    const { data } = await api.post('/api/auth/register', {
-      email,
-      main_wallet_address: walletAddress,
-    });
-    return data;
-  },
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${ORACLE_URL}${path}`, { next: { revalidate: 0 } });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
 
-  // Rules
-  async getRules() {
-    if (MOCK_MODE) return mockRules;
-    const { data } = await api.get('/api/rules');
-    return data.rules;
-  },
+export const oracleClient = {
+  getTopic: (topic: string) =>
+    get<TopicScore>(`/api/attention/${encodeURIComponent(topic)}`),
 
-  async getRule(id: number) {
-    const { data } = await api.get(`/api/rules/${id}`);
-    return data.rule;
-  },
+  getAllTopics: () =>
+    get<{ topics: Record<string, { value: number; timestamp: number }> }>(
+      '/api/attention'
+    ),
 
-  async createRule(ruleData: any) {
-    const { data } = await api.post('/api/rules', ruleData);
-    return data.rule;
-  },
-
-  async updateRule(id: number, updates: any) {
-    const { data } = await api.put(`/api/rules/${id}`, updates);
-    return data.rule;
-  },
-
-  async deleteRule(id: number) {
-    const { data } = await api.delete(`/api/rules/${id}`);
-    return data;
-  },
-
-  // Wallets
-  async getWallets() {
-    if (MOCK_MODE) return mockWallets;
-    const { data } = await api.get('/api/wallets');
-    return data.wallets;
-  },
-
-  async getWallet(id: number) {
-    const { data } = await api.get(`/api/wallets/${id}`);
-    return data.wallet;
-  },
-
-  async createWallet(name: string) {
-    const { data } = await api.post('/api/wallets', { name });
-    return data.wallet;
-  },
-
-  async getWalletBalance(id: number) {
-    const { data } = await api.get(`/api/wallets/${id}/balance`);
-    return data.balance;
-  },
-
-  // Webhooks
-  async getWebhooks() {
-    const { data } = await api.get('/api/webhooks');
-    return data.webhooks;
-  },
-
-  async createWebhook(webhookData: any) {
-    const { data } = await api.post('/api/webhooks', webhookData);
-    return data.webhook;
-  },
-
-  async deleteWebhook(id: number) {
-    const { data } = await api.delete(`/api/webhooks/${id}`);
-    return data;
-  },
-
-  async testWebhook(id: number) {
-    const { data } = await api.post(`/api/webhooks/${id}/test`);
-    return data;
-  },
-
-  // Markets (cross-platform comparison)
-  async searchMarkets(query: string) {
-    const { data } = await api.get('/api/markets/search', { params: { q: query } });
-    return data;
-  },
-
-  async compareMarkets(kalshiId: string, polyId: string) {
-    const { data } = await api.get('/api/markets/compare', {
-      params: { kalshi: kalshiId, poly: polyId },
-    });
-    return data.comparison;
-  },
-
-  async getArbitrageOpportunities(threshold?: number) {
-    const { data } = await api.get('/api/markets/arbitrage', {
-      params: threshold != null ? { threshold } : {},
-    });
-    return data;
-  },
-
-  // Compare (cross-platform auto-match)
-  async compareSearch(query: string) {
-    const { data } = await api.get('/api/compare/search', { params: { q: query } });
-    return data;
-  },
-
-  async compareArbitrage(threshold?: number) {
-    const { data } = await api.get('/api/compare/arbitrage', {
-      params: threshold != null ? { threshold } : {},
-    });
-    return data;
-  },
-
-  async compareByKalshiId(kalshiId: string) {
-    const { data } = await api.get(`/api/compare/${encodeURIComponent(kalshiId)}`);
-    return data;
-  },
-
-  // Portfolio
-  async getPortfolio() {
-    const { data } = await api.get('/api/portfolio');
-    return data;
-  },
-
-  // Trade execution
-  async executeTrade(params: {
-    platform: 'kalshi' | 'polymarket';
-    market_id: string;
-    outcome: 'YES' | 'NO';
-    side: 'BUY' | 'SELL';
-    size: number;
-    price: number;
-    wallet_address?: string;
-  }) {
-    const { data } = await api.post('/api/trade', params);
-    return data;
-  },
-
-  // Admin
-  async getMetrics() {
-    if (MOCK_MODE) return mockMetrics;
-    const { data } = await api.get('/api/admin/metrics');
-    return data.metrics;
-  },
-
-  async getHealth() {
-    const { data } = await api.get('/api/admin/health');
-    return data;
-  },
-
-  async getExecutions(params?: any) {
-    const { data } = await api.get('/api/admin/executions', { params });
-    return data.executions;
-  },
+  getHistory: (topic: string, hours = 24) =>
+    get<TopicHistory>(
+      `/api/attention/${encodeURIComponent(topic)}/history?hours=${hours}`
+    ),
 };
