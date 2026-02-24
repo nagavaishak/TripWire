@@ -2,6 +2,7 @@ import { TwitterCollector } from '../collectors/twitter.collector';
 import { RedditCollector } from '../collectors/reddit.collector';
 import { YouTubeCollector } from '../collectors/youtube.collector';
 import { TrendsCollector } from '../collectors/trends.collector';
+import { FarcasterCollector } from '../collectors/farcaster.collector';
 import { TimeDecay } from '../utils/time-decay';
 import { db } from '../database/connection';
 
@@ -19,18 +20,20 @@ interface ScoreComponents {
 }
 
 export class AttentionIndexComputer {
-    private twitterCollector: TwitterCollector | null;
-    private redditCollector:  RedditCollector | null;
-    private youtubeCollector: YouTubeCollector;
-    private trendsCollector:  TrendsCollector;
+    private twitterCollector:   TwitterCollector | null;
+    private redditCollector:    RedditCollector | null;
+    private youtubeCollector:   YouTubeCollector;
+    private trendsCollector:    TrendsCollector;
+    private farcasterCollector: FarcasterCollector;
 
     constructor() {
-        this.twitterCollector = hasTwitter() ? new TwitterCollector() : null;
-        this.redditCollector  = hasReddit()  ? new RedditCollector()  : null;
-        this.youtubeCollector = new YouTubeCollector();
-        this.trendsCollector  = new TrendsCollector();
+        this.twitterCollector   = hasTwitter() ? new TwitterCollector() : null;
+        this.redditCollector    = hasReddit()  ? new RedditCollector()  : null;
+        this.youtubeCollector   = new YouTubeCollector();
+        this.trendsCollector    = new TrendsCollector();
+        this.farcasterCollector = new FarcasterCollector();
 
-        const active = ['YouTube', 'Google Trends'];
+        const active = ['YouTube', 'Google Trends', 'Farcaster'];
         if (hasTwitter()) active.unshift('Twitter');
         if (hasReddit())  active.push('Reddit');
         console.log(`[AttentionIndex] Active sources: ${active.join(', ')}`);
@@ -42,17 +45,19 @@ export class AttentionIndexComputer {
 
         try {
             // Collect from all available platforms in parallel
-            const [twitter, reddit, youtube, trends] = await Promise.all([
+            const [twitter, reddit, youtube, trends, farcaster] = await Promise.all([
                 this.twitterCollector ? this.twitterCollector.collect(topic) : Promise.resolve(null),
                 this.redditCollector  ? this.redditCollector.collect(topic)  : Promise.resolve(null),
                 this.youtubeCollector.collect(topic),
-                this.trendsCollector.collect(topic).catch(() => null),  // graceful fallback
+                this.trendsCollector.collect(topic).catch(() => null),
+                this.farcasterCollector.collect(topic).catch(() => null),
             ]);
 
             // Store raw data
             const stores = [
                 this.storeRawData(topic, 'youtube', youtube),
                 this.storeRawData(topic, 'trends', trends),
+                this.storeRawData(topic, 'farcaster', farcaster),
             ];
             if (twitter) stores.push(this.storeRawData(topic, 'twitter', twitter));
             if (reddit)  stores.push(this.storeRawData(topic, 'reddit',  reddit));
@@ -65,34 +70,36 @@ export class AttentionIndexComputer {
                 : null;
 
             // Compute platform-specific scores
-            const twitter_score = decayed_twitter ? this.computeTwitterScore(decayed_twitter) : 0;
-            const reddit_score  = reddit  ? this.computeRedditScore(reddit)  : 0;
-            const youtube_score = this.computeYouTubeScore(youtube);
-            const trends_score  = trends  ? trends.interest : 0;  // already 0-100
+            const twitter_score   = decayed_twitter ? this.computeTwitterScore(decayed_twitter) : 0;
+            const reddit_score    = reddit     ? this.computeRedditScore(reddit)     : 0;
+            const youtube_score   = this.computeYouTubeScore(youtube);
+            const trends_score    = trends     ? trends.interest : 0;      // 0-100
+            const farcaster_score = farcaster  ? this.computeFarcasterScore(farcaster) : 0;
 
             if (hasTwitter()) console.log(`  Twitter raw:       ${twitter_score.toFixed(2)}`);
             if (hasReddit())  console.log(`  Reddit raw:        ${reddit_score.toFixed(2)}`);
             console.log(`  YouTube raw:       ${youtube_score.toFixed(2)}`);
             console.log(`  Google Trends:     ${trends_score.toFixed(2)} / 100`);
+            console.log(`  Farcaster raw:     ${farcaster_score.toFixed(2)}`);
 
             // Normalize to 0-1
-            const twitter_norm = this.normalize(twitter_score, 0, 50000);
-            const reddit_norm  = this.normalize(reddit_score,  0, 10000);
-            const youtube_norm = this.normalize(youtube_score, 0, 200000);
-            const trends_norm  = trends_score / 100;  // already 0-100 scale
+            const twitter_norm   = this.normalize(twitter_score,   0, 50000);
+            const reddit_norm    = this.normalize(reddit_score,     0, 10000);
+            const youtube_norm   = this.normalize(youtube_score,    0, 200000);
+            const trends_norm    = trends_score / 100;
+            const farcaster_norm = this.normalize(farcaster_score,  0, 5000);
 
             // Weighted aggregation based on available sources
             let EI = 0;
             if (hasTwitter() && hasReddit()) {
-                // Full multi-source
-                EI = twitter_norm * 0.40 + reddit_norm * 0.25 + youtube_norm * 0.20 + trends_norm * 0.15;
+                EI = twitter_norm * 0.35 + reddit_norm * 0.20 + youtube_norm * 0.20 + trends_norm * 0.15 + farcaster_norm * 0.10;
             } else if (hasTwitter()) {
-                EI = twitter_norm * 0.50 + youtube_norm * 0.30 + trends_norm * 0.20;
+                EI = twitter_norm * 0.40 + youtube_norm * 0.25 + trends_norm * 0.20 + farcaster_norm * 0.15;
             } else if (hasReddit()) {
-                EI = reddit_norm * 0.40 + youtube_norm * 0.35 + trends_norm * 0.25;
+                EI = reddit_norm * 0.30 + youtube_norm * 0.30 + trends_norm * 0.25 + farcaster_norm * 0.15;
             } else {
-                // YouTube + Google Trends (current MVP)
-                EI = youtube_norm * 0.60 + trends_norm * 0.40;
+                // YouTube + Google Trends + Farcaster (current free MVP)
+                EI = youtube_norm * 0.50 + trends_norm * 0.30 + farcaster_norm * 0.20;
             }
 
             const DoA = EI * 100;
@@ -154,6 +161,22 @@ export class AttentionIndexComputer {
             metrics.total_views                * 0.01 +
             metrics.avg_view_weighted_likes    * 1000 +
             metrics.avg_view_weighted_comments * 2000
+        );
+    }
+
+    private computeFarcasterScore(metrics: {
+        total_reactions: number;
+        total_replies: number;
+        total_recasts: number;
+        total_quotes: number;
+        cast_count: number;
+    }): number {
+        return (
+            metrics.total_reactions * 2.0 +
+            metrics.total_recasts   * 3.0 +
+            metrics.total_replies   * 1.5 +
+            metrics.total_quotes    * 2.5 +
+            metrics.cast_count      * 5.0
         );
     }
 
