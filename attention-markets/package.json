@@ -14,7 +14,8 @@
     "oracle:read": "ts-node scripts/read-oracle.ts",
     "oracle:monitor": "ts-node scripts/monitor-feeds.ts",
     "test:collectors": "ts-node tests/test-new-collectors.ts",
-    "test:index": "ts-node tests/test-full-index.ts"
+    "test:index": "ts-node tests/test-full-index.ts",
+    "anchor:push": "ts-node scripts/push-doa-onchain.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
