@@ -1,0 +1,17 @@
+{
+  "queue": "A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w",
+  "feeds": {
+    "Solana": {
+      "cid": "bafkreiftn5wptwqpefzphjcylhmhxwh2qoa4atn4smc263mgammvnbfdmm",
+      "feedHash": "0xb36f6cf9da0f2172f3a45859d87bd8fa8381c04dbc9305af6d8603195684a363",
+      "jobUrl": "https://crossbar.switchboard.xyz/fetch/bafkreiftn5wptwqpefzphjcylhmhxwh2qoa4atn4smc263mgammvnbfdmm",
+      "apiUrl": "https://attention-markets-api.onrender.com/api/attention/Solana"
+    },
+    "AI": {
+      "cid": "bafkreidiqw24g4lnbn26mjbg4ilmszsm5n6z5pyf24aq2rasjxtd6nnt5q",
+      "feedHash": "0x6885b5c3716d0b75e62426e216c9664ceb7d9ebf05d7010d44124de63f35b3ec",
+      "jobUrl": "https://crossbar.switchboard.xyz/fetch/bafkreidiqw24g4lnbn26mjbg4ilmszsm5n6z5pyf24aq2rasjxtd6nnt5q",
+      "apiUrl": "https://attention-markets-api.onrender.com/api/attention/AI"
+    }
+  }
+}

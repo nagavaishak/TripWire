@@ -10,7 +10,9 @@
     "test": "jest",
     "migrate": "ts-node src/database/migrate.ts",
     "migrate:prod": "node dist/database/migrate.js",
-    "test:collect": "ts-node test-collection.ts"
+    "test:collect": "ts-node test-collection.ts",
+    "oracle:read": "ts-node scripts/read-oracle.ts",
+    "oracle:monitor": "ts-node scripts/monitor-feeds.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

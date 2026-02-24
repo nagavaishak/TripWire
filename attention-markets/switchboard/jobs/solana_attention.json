@@ -1,0 +1,16 @@
+{
+  "name": "Solana Attention DoA",
+  "tasks": [
+    {
+      "httpTask": {
+        "url": "https://attention-markets-api.onrender.com/api/attention/Solana",
+        "method": "GET"
+      }
+    },
+    {
+      "jsonParseTask": {
+        "path": "$.value"
+      }
+    }
+  ]
+}

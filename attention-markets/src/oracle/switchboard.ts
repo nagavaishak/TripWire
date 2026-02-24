@@ -20,6 +20,13 @@ import { Connection, Keypair, PublicKey, Transaction,
 
 // Switchboard Crossbar (oracle job registry — no auth needed)
 const CROSSBAR_URL = 'https://crossbar.switchboard.xyz';
+// Switchboard On-Demand queue (mainnet)
+const SB_QUEUE = 'A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w';
+// Pre-registered feed hashes (from switchboard/feeds.json)
+const FEED_HASHES: Record<string, string> = {
+    Solana: '0xb36f6cf9da0f2172f3a45859d87bd8fa8381c04dbc9305af6d8603195684a363',
+    AI:     '0x6885b5c3716d0b75e62426e216c9664ceb7d9ebf05d7010d44124de63f35b3ec',
+};
 // Solana Memo Program
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
@@ -81,29 +88,30 @@ export class SwitchboardOracle {
 
         // Switchboard oracle job definition (JSON format)
         const jobDef = {
-            tasks: [
+            queue: SB_QUEUE,
+            jobs: [
                 {
-                    httpTask: {
-                        url: `${apiBase}/api/attention/${encodeURIComponent(topic)}`,
-                    },
-                },
-                {
-                    jsonParseTask: {
-                        path: '$.value',
-                    },
+                    tasks: [
+                        { httpTask: { url: `${apiBase}/api/attention/${encodeURIComponent(topic)}` } },
+                        { jsonParseTask: { path: '$.value' } },
+                    ],
                 },
             ],
         };
 
         try {
-            // Store job on Crossbar — returns a content-addressable CID
-            const response = await axios.post(`${CROSSBAR_URL}/store`, jobDef, {
-                headers: { 'Content-Type': 'application/json' },
-                timeout: 10_000,
-            });
+            // Use pre-registered hash if available, otherwise register fresh
+            let feedHash: string = FEED_HASHES[topic] || '';
+            let jobUrl: string;
 
-            const feedHash: string = response.data?.feedHash || response.data?.cid || 'local';
-            const jobUrl   = `${CROSSBAR_URL}/fetch/${feedHash}`;
+            if (!feedHash) {
+                const response = await axios.post(`${CROSSBAR_URL}/store`, jobDef, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 10_000,
+                });
+                feedHash = response.data?.feedHash || response.data?.cid || 'local';
+            }
+            jobUrl = `${CROSSBAR_URL}/fetch/${feedHash.replace('0x', '')}`;
 
             const info: FeedInfo = { topic, feedHash, jobUrl, lastUpdated: new Date() };
             this.feeds.set(topic, info);
