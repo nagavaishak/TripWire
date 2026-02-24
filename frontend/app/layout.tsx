@@ -1,13 +1,37 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const inter = Inter({ subsets: ["latin"] });
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-space",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "TripWire — Attention Oracle",
-  description: "Real-time attention data for prediction markets. YouTube + Google Trends + Farcaster → DoA score on Solana.",
+  title: "TripWire — Attention Has a Price Now",
+  description: "Real-time attention trading on Solana. TripWire reads YouTube, Google Trends, and Farcaster — then puts the signal on-chain.",
+  openGraph: {
+    title: "TripWire — Attention Has a Price Now",
+    description: "Real-time attention trading on Solana.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
@@ -16,8 +40,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased`}>
+    <html lang="en" className={`dark ${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
+      <body className="antialiased scanlines">
         <Providers>{children}</Providers>
       </body>
     </html>

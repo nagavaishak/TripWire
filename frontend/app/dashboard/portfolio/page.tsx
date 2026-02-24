@@ -212,7 +212,7 @@ function HistoryPageInner() {
       <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/">
+            <Link href="/dashboard">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Dashboard

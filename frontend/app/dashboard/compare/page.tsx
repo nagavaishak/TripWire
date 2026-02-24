@@ -202,7 +202,7 @@ function ComparePageInner() {
       <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/">
+            <Link href="/dashboard">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Dashboard
@@ -280,13 +280,13 @@ function ComparePageInner() {
         {/* Links to history */}
         {topicA && topicB && (
           <div className="grid grid-cols-2 gap-3">
-            <Link href={`/portfolio?topic=${topicA}`}>
+            <Link href={`/dashboard/portfolio?topic=${topicA}`}>
               <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <Zap className="w-3.5 h-3.5" />
                 {topicA} History
               </Button>
             </Link>
-            <Link href={`/portfolio?topic=${topicB}`}>
+            <Link href={`/dashboard/portfolio?topic=${topicB}`}>
               <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <Zap className="w-3.5 h-3.5" />
                 {topicB} History
