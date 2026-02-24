@@ -37,11 +37,13 @@ router.get('/attention/:topic', async (req: Request, res: Response) => {
             });
         }
 
-        // Switchboard oracle format
+        // Switchboard oracle format + source metadata
         return res.json({
             value: parseFloat(doa_score),
             timestamp: Math.floor(new Date(computed_at).getTime() / 1000),
-            topic
+            topic,
+            sources: ['youtube', 'google_trends', 'farcaster'],
+            weights: { youtube: 0.30, google_trends: 0.35, farcaster: 0.35 },
         });
 
     } catch (error) {
@@ -61,7 +63,7 @@ router.get('/attention/:topic/history', async (req: Request, res: Response) => {
     try {
         const result = await db.query(`
             SELECT doa_score, computed_at,
-                   twitter_ei, reddit_ei, youtube_ei
+                   youtube_ei, google_trends_ei, farcaster_ei
             FROM attention_scores
             WHERE topic = $1
               AND computed_at > NOW() - INTERVAL '${hours} hours'
@@ -71,13 +73,14 @@ router.get('/attention/:topic/history', async (req: Request, res: Response) => {
         return res.json({
             topic,
             hours,
+            sources: ['youtube', 'google_trends', 'farcaster'],
             data: result.rows.map(r => ({
                 time: Math.floor(new Date(r.computed_at).getTime() / 1000),
                 value: parseFloat(r.doa_score),
                 components: {
-                    twitter: parseFloat(r.twitter_ei),
-                    reddit:  parseFloat(r.reddit_ei),
-                    youtube: parseFloat(r.youtube_ei)
+                    youtube:       parseFloat(r.youtube_ei)       || 0,
+                    google_trends: parseFloat(r.google_trends_ei) || 0,
+                    farcaster:     parseFloat(r.farcaster_ei)     || 0,
                 }
             }))
         });

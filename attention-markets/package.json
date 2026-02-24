@@ -5,14 +5,16 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "tsc && cp src/database/*.sql dist/database/",
+    "build": "tsc && cp src/database/*.sql dist/database/ && mkdir -p dist/database/migrations && cp src/database/migrations/*.sql dist/database/migrations/",
     "start": "node dist/server.js",
     "test": "jest",
     "migrate": "ts-node src/database/migrate.ts",
     "migrate:prod": "node dist/database/migrate.js",
     "test:collect": "ts-node test-collection.ts",
     "oracle:read": "ts-node scripts/read-oracle.ts",
-    "oracle:monitor": "ts-node scripts/monitor-feeds.ts"
+    "oracle:monitor": "ts-node scripts/monitor-feeds.ts",
+    "test:collectors": "ts-node tests/test-new-collectors.ts",
+    "test:index": "ts-node tests/test-full-index.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

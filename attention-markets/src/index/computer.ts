@@ -16,6 +16,10 @@ interface ScoreComponents {
     twitter_raw: number;
     reddit_raw: number;
     youtube_raw: number;
+    trends_norm: number;
+    farcaster_norm: number;
+    trends_score: number;
+    farcaster_score: number;
     computation_time_ms: number;
 }
 
@@ -63,18 +67,26 @@ export class AttentionIndexComputer {
             if (reddit)  stores.push(this.storeRawData(topic, 'reddit',  reddit));
             await Promise.all(stores);
 
-            // Apply time-decay to Twitter if available
+            // Compute platform-specific scores
             const HALF_LIFE = Number(process.env.ATTENTION_HALF_LIFE_MINUTES) || 90;
+
+            // Apply time-decay to Twitter if available
             const decayed_twitter = twitter
                 ? TimeDecay.weightTwitterMetrics(twitter.tweets, HALF_LIFE)
                 : null;
 
-            // Compute platform-specific scores
             const twitter_score   = decayed_twitter ? this.computeTwitterScore(decayed_twitter) : 0;
             const reddit_score    = reddit     ? this.computeRedditScore(reddit)     : 0;
             const youtube_score   = this.computeYouTubeScore(youtube);
-            const trends_score    = trends     ? trends.interest : 0;      // 0-100
             const farcaster_score = farcaster  ? this.computeFarcasterScore(farcaster) : 0;
+
+            // Apply time-decay to Google Trends (has hourly timestamps)
+            const trends_score = trends && trends.interest_over_time.length > 0
+                ? TimeDecay.weightedAverage(
+                    trends.interest_over_time.map(p => ({ timestamp: p.time, value: p.value })),
+                    HALF_LIFE
+                  )
+                : (trends ? trends.current_interest : 0);
 
             if (hasTwitter()) console.log(`  Twitter raw:       ${twitter_score.toFixed(2)}`);
             if (hasReddit())  console.log(`  Reddit raw:        ${reddit_score.toFixed(2)}`);
@@ -86,20 +98,20 @@ export class AttentionIndexComputer {
             const twitter_norm   = this.normalize(twitter_score,   0, 50000);
             const reddit_norm    = this.normalize(reddit_score,     0, 10000);
             const youtube_norm   = this.normalize(youtube_score,    0, 200000);
-            const trends_norm    = trends_score / 100;
+            const trends_norm    = trends_score / 100;   // Google is 0-100
             const farcaster_norm = this.normalize(farcaster_score,  0, 5000);
 
             // Weighted aggregation based on available sources
             let EI = 0;
             if (hasTwitter() && hasReddit()) {
-                EI = twitter_norm * 0.35 + reddit_norm * 0.20 + youtube_norm * 0.20 + trends_norm * 0.15 + farcaster_norm * 0.10;
+                EI = twitter_norm * 0.30 + reddit_norm * 0.15 + trends_norm * 0.25 + youtube_norm * 0.15 + farcaster_norm * 0.15;
             } else if (hasTwitter()) {
-                EI = twitter_norm * 0.40 + youtube_norm * 0.25 + trends_norm * 0.20 + farcaster_norm * 0.15;
+                EI = twitter_norm * 0.35 + trends_norm * 0.30 + youtube_norm * 0.20 + farcaster_norm * 0.15;
             } else if (hasReddit()) {
-                EI = reddit_norm * 0.30 + youtube_norm * 0.30 + trends_norm * 0.25 + farcaster_norm * 0.15;
+                EI = reddit_norm * 0.25 + trends_norm * 0.30 + youtube_norm * 0.25 + farcaster_norm * 0.20;
             } else {
-                // YouTube + Google Trends + Farcaster (current free MVP)
-                EI = youtube_norm * 0.50 + trends_norm * 0.30 + farcaster_norm * 0.20;
+                // Free MVP: Trends 35% + YouTube 30% + Farcaster 35%
+                EI = trends_norm * 0.35 + youtube_norm * 0.30 + farcaster_norm * 0.35;
             }
 
             const DoA = EI * 100;
@@ -111,6 +123,10 @@ export class AttentionIndexComputer {
                 twitter_raw: twitter_score,
                 reddit_raw:  reddit_score,
                 youtube_raw: youtube_score,
+                trends_norm,
+                farcaster_norm,
+                trends_score,
+                farcaster_score,
                 computation_time_ms: Date.now() - startTime,
             });
 
@@ -197,12 +213,16 @@ export class AttentionIndexComputer {
                 topic, doa_score,
                 twitter_ei, reddit_ei, youtube_ei,
                 twitter_raw_score, reddit_raw_score, youtube_raw_score,
+                google_trends_ei, farcaster_ei,
+                google_trends_raw_score, farcaster_raw_score,
                 computation_time_ms
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `, [
             topic, doa,
             components.twitter_ei, components.reddit_ei, components.youtube_ei,
             components.twitter_raw, components.reddit_raw, components.youtube_raw,
+            components.trends_norm, components.farcaster_norm,
+            components.trends_score, components.farcaster_score,
             components.computation_time_ms,
         ]);
     }

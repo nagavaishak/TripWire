@@ -1,62 +1,72 @@
 // @ts-ignore — no types for google-trends-api
 import googleTrends from 'google-trends-api';
 
+export interface TrendsDataPoint {
+    time: Date;
+    value: number;
+}
+
 export interface TrendsMetrics {
     topic: string;
     collected_at: Date;
-    interest: number;       // 0-100 (Google's scale)
-    avg_7d: number;         // average over last 7 days
-    peak_7d: number;        // peak value over last 7 days
-    data_points: number;
+    interest_over_time: TrendsDataPoint[];  // hourly, last 24h
+    avg_interest: number;
+    current_interest: number;
+    peak_interest_24h: number;
+    trend_direction: 'rising' | 'falling' | 'stable';
 }
 
 export class TrendsCollector {
     async collect(topic: string): Promise<TrendsMetrics> {
-        console.log(`[Trends] Collecting data for: ${topic}`);
+        console.log(`[GoogleTrends] Collecting data for: ${topic}`);
 
         try {
             const raw = await googleTrends.interestOverTime({
                 keyword: topic,
-                startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                startTime: new Date(Date.now() - 24 * 60 * 60 * 1000),
+                endTime: new Date(),
+                granularTimeResolution: true,  // hourly data
             });
 
             const parsed = JSON.parse(raw);
-            const points: Array<{ value: number[] }> = parsed?.default?.timelineData || [];
+            const timeline: any[] = parsed?.default?.timelineData || [];
 
-            if (points.length === 0) {
-                console.warn(`[Trends] No data for ${topic}`);
+            if (timeline.length === 0) {
+                console.warn(`[GoogleTrends] No data for ${topic}`);
                 return this.emptyMetrics(topic);
             }
 
-            const values = points.map(p => p.value[0] as number);
-            const interest = values[values.length - 1];
-            const avg_7d = values.reduce((s, v) => s + v, 0) / values.length;
-            const peak_7d = Math.max(...values);
+            const interest_over_time: TrendsDataPoint[] = timeline.map(p => ({
+                time: new Date(Number(p.time) * 1000),
+                value: p.value?.[0] || 0,
+            }));
 
-            console.log(`[Trends] ${topic}: interest=${interest}, avg=${avg_7d.toFixed(1)}, peak=${peak_7d}`);
+            const values = interest_over_time.map(p => p.value).filter(v => v > 0);
+            const current_interest = values[values.length - 1] || 0;
+            const prev_interest    = values[values.length - 2] || current_interest;
+            const avg_interest     = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+            const peak_interest_24h = Math.max(...values, 0);
 
-            return {
-                topic,
-                collected_at: new Date(),
-                interest,
-                avg_7d,
-                peak_7d,
-                data_points: values.length,
-            };
+            let trend_direction: 'rising' | 'falling' | 'stable' = 'stable';
+            if (current_interest > prev_interest * 1.1) trend_direction = 'rising';
+            else if (current_interest < prev_interest * 0.9) trend_direction = 'falling';
+
+            console.log(`[GoogleTrends] ${topic}: current=${current_interest}, avg=${avg_interest.toFixed(1)}, trend=${trend_direction}`);
+
+            return { topic, collected_at: new Date(), interest_over_time, avg_interest, current_interest, peak_interest_24h, trend_direction };
+
         } catch (err: any) {
-            console.error(`[Trends] Error collecting ${topic}:`, err.message);
-            throw err;
+            console.error(`[GoogleTrends] Error collecting ${topic}:`, err.message);
+            return this.emptyMetrics(topic);  // graceful fallback
         }
     }
 
     private emptyMetrics(topic: string): TrendsMetrics {
         return {
-            topic,
-            collected_at: new Date(),
-            interest: 0,
-            avg_7d: 0,
-            peak_7d: 0,
-            data_points: 0,
+            topic, collected_at: new Date(),
+            interest_over_time: [], avg_interest: 0,
+            current_interest: 0, peak_interest_24h: 0,
+            trend_direction: 'stable',
         };
     }
 }
