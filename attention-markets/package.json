@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "tsc",
+    "build": "tsc && cp src/database/*.sql dist/database/",
     "start": "node dist/server.js",
     "test": "jest",
     "migrate": "ts-node src/database/migrate.ts",
