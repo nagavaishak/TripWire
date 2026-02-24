@@ -1,6 +1,7 @@
 import { TwitterCollector } from '../collectors/twitter.collector';
 import { RedditCollector } from '../collectors/reddit.collector';
 import { YouTubeCollector } from '../collectors/youtube.collector';
+import { TrendsCollector } from '../collectors/trends.collector';
 import { TimeDecay } from '../utils/time-decay';
 import { db } from '../database/connection';
 
@@ -19,15 +20,17 @@ interface ScoreComponents {
 
 export class AttentionIndexComputer {
     private twitterCollector: TwitterCollector | null;
-    private redditCollector: RedditCollector | null;
+    private redditCollector:  RedditCollector | null;
     private youtubeCollector: YouTubeCollector;
+    private trendsCollector:  TrendsCollector;
 
     constructor() {
         this.twitterCollector = hasTwitter() ? new TwitterCollector() : null;
-        this.redditCollector  = hasReddit() ? new RedditCollector()  : null;
+        this.redditCollector  = hasReddit()  ? new RedditCollector()  : null;
         this.youtubeCollector = new YouTubeCollector();
+        this.trendsCollector  = new TrendsCollector();
 
-        const active = ['YouTube'];
+        const active = ['YouTube', 'Google Trends'];
         if (hasTwitter()) active.unshift('Twitter');
         if (hasReddit())  active.push('Reddit');
         console.log(`[AttentionIndex] Active sources: ${active.join(', ')}`);
@@ -38,63 +41,70 @@ export class AttentionIndexComputer {
         console.log(`\n[AttentionIndex] Computing for ${topic}...`);
 
         try {
-            // 1. Collect from available platforms in parallel
-            const [twitter, reddit, youtube] = await Promise.all([
+            // Collect from all available platforms in parallel
+            const [twitter, reddit, youtube, trends] = await Promise.all([
                 this.twitterCollector ? this.twitterCollector.collect(topic) : Promise.resolve(null),
                 this.redditCollector  ? this.redditCollector.collect(topic)  : Promise.resolve(null),
-                this.youtubeCollector.collect(topic)
+                this.youtubeCollector.collect(topic),
+                this.trendsCollector.collect(topic).catch(() => null),  // graceful fallback
             ]);
 
             // Store raw data
-            const stores = [this.storeRawData(topic, 'youtube', youtube)];
+            const stores = [
+                this.storeRawData(topic, 'youtube', youtube),
+                this.storeRawData(topic, 'trends', trends),
+            ];
             if (twitter) stores.push(this.storeRawData(topic, 'twitter', twitter));
             if (reddit)  stores.push(this.storeRawData(topic, 'reddit',  reddit));
             await Promise.all(stores);
 
-            // 2. Apply time-decay to Twitter if available
+            // Apply time-decay to Twitter if available
             const HALF_LIFE = Number(process.env.ATTENTION_HALF_LIFE_MINUTES) || 90;
             const decayed_twitter = twitter
                 ? TimeDecay.weightTwitterMetrics(twitter.tweets, HALF_LIFE)
                 : null;
 
-            // 3. Compute platform-specific scores
+            // Compute platform-specific scores
             const twitter_score = decayed_twitter ? this.computeTwitterScore(decayed_twitter) : 0;
             const reddit_score  = reddit  ? this.computeRedditScore(reddit)  : 0;
             const youtube_score = this.computeYouTubeScore(youtube);
+            const trends_score  = trends  ? trends.interest : 0;  // already 0-100
 
-            if (hasTwitter()) console.log(`  Twitter raw: ${twitter_score.toFixed(2)}`);
-            if (hasReddit())  console.log(`  Reddit raw:  ${reddit_score.toFixed(2)}`);
-            console.log(`  YouTube raw: ${youtube_score.toFixed(2)}`);
+            if (hasTwitter()) console.log(`  Twitter raw:       ${twitter_score.toFixed(2)}`);
+            if (hasReddit())  console.log(`  Reddit raw:        ${reddit_score.toFixed(2)}`);
+            console.log(`  YouTube raw:       ${youtube_score.toFixed(2)}`);
+            console.log(`  Google Trends:     ${trends_score.toFixed(2)} / 100`);
 
-            // 4. Normalize to 0-1
+            // Normalize to 0-1
             const twitter_norm = this.normalize(twitter_score, 0, 50000);
             const reddit_norm  = this.normalize(reddit_score,  0, 10000);
             const youtube_norm = this.normalize(youtube_score, 0, 200000);
+            const trends_norm  = trends_score / 100;  // already 0-100 scale
 
-            // 5. Weighted aggregation — only count active sources
+            // Weighted aggregation based on available sources
             let EI = 0;
             if (hasTwitter() && hasReddit()) {
-                EI = twitter_norm * 0.50 + reddit_norm * 0.30 + youtube_norm * 0.20;
+                // Full multi-source
+                EI = twitter_norm * 0.40 + reddit_norm * 0.25 + youtube_norm * 0.20 + trends_norm * 0.15;
             } else if (hasTwitter()) {
-                EI = twitter_norm * 0.625 + youtube_norm * 0.375;
+                EI = twitter_norm * 0.50 + youtube_norm * 0.30 + trends_norm * 0.20;
             } else if (hasReddit()) {
-                EI = reddit_norm * 0.50 + youtube_norm * 0.50;
+                EI = reddit_norm * 0.40 + youtube_norm * 0.35 + trends_norm * 0.25;
             } else {
-                EI = youtube_norm; // YouTube only
+                // YouTube + Google Trends (current MVP)
+                EI = youtube_norm * 0.60 + trends_norm * 0.40;
             }
 
-            // 6. Convert to Dollar of Attention (DoA)
             const DoA = EI * 100;
 
-            // 7. Store result
             await this.storeScore(topic, DoA, {
                 twitter_ei: twitter_norm,
-                reddit_ei: reddit_norm,
+                reddit_ei:  reddit_norm,
                 youtube_ei: youtube_norm,
                 twitter_raw: twitter_score,
-                reddit_raw: reddit_score,
+                reddit_raw:  reddit_score,
                 youtube_raw: youtube_score,
-                computation_time_ms: Date.now() - startTime
+                computation_time_ms: Date.now() - startTime,
             });
 
             console.log(`  → DoA: ${DoA.toFixed(2)} (${Date.now() - startTime}ms)\n`);
@@ -122,25 +132,17 @@ export class AttentionIndexComputer {
     }
 
     private computeRedditScore(metrics: any): number {
-        const level_score = (
+        return (
             metrics.level.total_score    * 2.0 +
             metrics.level.total_comments * 3.0 +
-            metrics.level.posts_count    * 10.0
-        );
-
-        const momentum_score = (
+            metrics.level.posts_count    * 10.0 +
             metrics.momentum.total_score    * 3.0 +
             metrics.momentum.total_comments * 3.0 +
-            metrics.momentum.posts_count    * 10.0
-        );
-
-        const velocity_score = (
+            metrics.momentum.posts_count    * 10.0 +
             metrics.velocity.total_score * 4.0 +
             metrics.velocity.max_speed   * 50.0 +
             metrics.velocity.posts_count * 10.0
         );
-
-        return level_score + momentum_score + velocity_score;
     }
 
     private computeYouTubeScore(metrics: {
@@ -156,8 +158,7 @@ export class AttentionIndexComputer {
     }
 
     private normalize(value: number, min: number, max: number): number {
-        const normalized = (value - min) / Math.max(max - min, 1);
-        return Math.max(0, Math.min(1, normalized));
+        return Math.max(0, Math.min(1, (value - min) / Math.max(max - min, 1)));
     }
 
     private async storeRawData(topic: string, platform: string, metrics: any): Promise<void> {
@@ -179,7 +180,7 @@ export class AttentionIndexComputer {
             topic, doa,
             components.twitter_ei, components.reddit_ei, components.youtube_ei,
             components.twitter_raw, components.reddit_raw, components.youtube_raw,
-            components.computation_time_ms
+            components.computation_time_ms,
         ]);
     }
 }
