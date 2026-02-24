@@ -1,243 +1,177 @@
-# TripWire
+# TripWire — Attention Markets Oracle
 
-Cross-platform prediction market infrastructure on Solana - solving data fragmentation and enabling sophisticated multi-market strategies through oracle aggregation and automated execution.
-
-## What TripWire Solves
-
-**Two critical infrastructure gaps in prediction markets:**
-
-1. **Platform Fragmentation (#5):** Data scattered across incompatible Kalshi, Polymarket, and Robinhood APIs
-2. **Limited Trade Expression (#3):** No infrastructure for executing sophisticated multi-market conditional strategies
-
-**TripWire's dual-layer solution:**
-- **Oracle Layer:** Aggregates cross-platform data into consensus probability feeds
-- **Execution Layer:** Enables automated multi-market strategies with complex conditional logic
+Real-time attention data oracle for Solana prediction markets. Aggregates engagement signals across YouTube, Google Trends, and Farcaster into a single **Degree of Attention (DoA)** score, published on-chain via Switchboard.
 
 ---
 
-## Use Cases
+## What It Does
 
-### For Prediction Market Traders:
-Set sophisticated cross-platform strategies:
-- "Buy Kalshi recession contracts only if Polymarket shows Fed NOT cutting"
-- "Execute arbitrage when same event shows >5% price difference across platforms"
-- "Auto-rebalance positions when consensus probability shifts >10%"
+Prediction markets need more than price data — they need to know what the world is paying attention to. TripWire tracks real-time attention signals for topics (e.g. `Solana`, `AI`) across three free data sources and exposes a live oracle score that on-chain programs can consume.
 
-### For Solana DeFi Protocols:
-Integrate event-driven automation:
-- Marinade: Auto-unstake mSOL when recession probability crosses threshold
-- Kamino: Macro-aware vault strategies based on Fed policy signals
-- DAOs: Treasury rebalancing triggered by consensus probabilities
+**Sources:**
+| Source | Weight | What It Measures |
+|--------|--------|-----------------|
+| Google Trends | 35% | Search interest (leading indicator) |
+| Farcaster | 35% | Crypto-native social discourse |
+| YouTube | 30% | Content consumption (lagging indicator) |
 
-### For Developers:
-Consume unified prediction market data:
-- One API endpoint for all platforms (no multiple integrations)
-- Volume-weighted consensus probabilities
-- Real-time updates with quality validation
-
----
-
-## Setup
-
-### 1. Install dependencies
-```bash
-npm install
-```
-
-### 2. Set up Supabase
-1. Create project at [supabase.com](https://supabase.com)
-2. Get connection string from Project Settings > Database
-3. Copy to `.env` as `DATABASE_URL`
-
-### 3. Configure environment
-```bash
-cp .env.example .env
-```
-
-Generate encryption key:
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-Paste output into `MASTER_ENCRYPTION_KEY` in `.env`
-
-### 4. Run migrations
-```bash
-npm run migrate
-```
-
-### 5. Start server
-```bash
-npm run dev
-```
-
-Server runs at http://localhost:3000
+**Output:** DoA score (0–100), updated every 5 minutes, published on-chain via Switchboard oracle.
 
 ---
 
 ## Architecture
 
-### Oracle Layer (Solves Platform Fragmentation)
-**What it does:** Aggregates Kalshi, Polymarket, and other platforms into unified probability feeds
+```
+YouTube API ─────┐
+Google Trends ───┼──► AttentionIndexComputer ──► DoA score ──► Switchboard oracle
+Farcaster API ───┘         (time-decay + normalization)             (Solana devnet)
+                                    │
+                                    └──► REST API ──► VistaDex frontend
+```
 
-**Components:**
-- Multi-platform API integration
-- Data normalization (different formats → standard schema)
-- Consensus calculation (volume-weighted average)
-- Quality validation (staleness detection, manipulation protection)
-- REST API for developer consumption
+**Three components:**
 
-**Why Solana:** Kalshi's DFlow tokenization on Solana enables on-chain positions
+1. **`attention-markets/`** — Oracle backend (Node.js + TypeScript)
+   - Collectors for each data source
+   - Time-decay weighting (90-min half-life)
+   - PostgreSQL for score history
+   - Scheduled updates via node-cron
+   - Deployed on Render
 
-### Execution Layer (Enables Multi-Market Strategies)
-**What it does:** Automates complex cross-platform strategies
+2. **`frontend/`** — VistaDex dashboard (Next.js 16)
+   - Compare DoA scores across topics
+   - Portfolio view of attention positions
+   - Live charts with component breakdown
 
-**Components:**
-- Automation wallets (encrypted keypairs, user-withdrawable funds)
-- Multi-market rule engine (AND/OR conditions across platforms)
-- State machine (7 states: CREATED → ACTIVE → TRIGGERED → EXECUTING → EXECUTED/FAILED)
-- Pre-flight checks (balance, fees, slippage, caps)
-- Jupiter integration (on-chain swap execution)
+3. **`src/`** — Market comparison backend (Node.js + TypeScript)
+   - Kalshi + Polymarket API integrations
+   - Arbitrage detection
+   - Automation rules + Jupiter swap execution
 
-**Why Solana:** Sub-second finality for time-sensitive execution, low fees for frequent rebalancing
+---
+
+## Quick Start
+
+### Oracle Backend
+
+```bash
+cd attention-markets
+npm install
+cp .env.example .env
+# Set YOUTUBE_API_KEY and DATABASE_URL
+
+# Run migrations
+npm run migrate
+
+# Start dev server (port 3000)
+npm run dev
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# Runs on http://localhost:3001
+```
+
+---
+
+## API
+
+**Live endpoint:** `https://attention-markets-api.onrender.com`
+
+```bash
+# Latest DoA score for a topic
+GET /api/attention/:topic
+
+# Response:
+{
+  "value": 62.3,
+  "timestamp": 1771941602,
+  "topic": "AI",
+  "sources": ["youtube", "google_trends", "farcaster"],
+  "weights": { "youtube": 0.30, "google_trends": 0.35, "farcaster": 0.35 }
+}
+
+# Historical scores (last N hours)
+GET /api/attention/:topic/history?hours=24
+
+# All tracked topics
+GET /api/attention
+```
+
+---
+
+## Switchboard Oracle
+
+DoA scores are pushed on-chain every 5 minutes to Switchboard feeds on Solana devnet.
+
+```bash
+# Read oracle values
+cd attention-markets
+npm run oracle:read
+
+# Monitor live updates
+npm run oracle:monitor
+```
+
+Feeds config: `attention-markets/switchboard/feeds.json`
+
+---
+
+## Environment Variables
+
+### attention-markets/.env
+
+```bash
+DATABASE_URL=postgresql://localhost/attention_markets
+YOUTUBE_API_KEY=your_key_here
+ATTENTION_TOPICS=Solana,AI
+ATTENTION_UPDATE_INTERVAL_MINUTES=5
+ATTENTION_HALF_LIFE_MINUTES=90
+
+# Optional (enables on-chain oracle push)
+SOLANA_PRIVATE_KEY=
+```
+
+---
+
+## Tests
+
+```bash
+cd attention-markets
+
+# Test collectors (no DB needed)
+npm run test:collectors
+
+# Test full index computation
+npm run test:index
+```
 
 ---
 
 ## Tech Stack
 
-**Backend:**
-- Node.js + TypeScript
-- Express (API framework)
-- PostgreSQL (Supabase)
-- Winston (logging)
-
-**Blockchain:**
-- Solana web3.js
-- Jupiter v6 API
-- DFlow (Kalshi tokenization)
-
-**APIs:**
-- Kalshi REST API v2
-- Polymarket CLOB API
-- Additional platforms (expandable)
+- **Runtime:** Node.js 20 + TypeScript
+- **API:** Express
+- **Database:** PostgreSQL
+- **Frontend:** Next.js 16, React 19, Tailwind CSS 4
+- **Blockchain:** Solana web3.js, Switchboard oracle
+- **Hosting:** Render (backend), Vercel (frontend)
 
 ---
 
-## Database Schema
-```sql
-users                  -- Accounts and API keys
-automation_wallets     -- Encrypted keypairs for execution
-rules                  -- Multi-market automation strategies
-executions            -- On-chain transaction history
-market_snapshots      -- Cross-platform probability data
-```
+## Deployment
 
----
+The oracle backend auto-deploys to Render on push to `attention-markets-v1`. Render config is in `render.yaml` — migrations run automatically on deploy.
 
-## API Endpoints
-
-### Oracle API
-```
-GET  /api/oracle/markets              # List all markets across platforms
-GET  /api/oracle/probability/:id      # Consensus probability for event
-GET  /api/oracle/compare/:id          # Side-by-side platform comparison
-```
-
-### Automation API
-```
-POST /api/wallets                     # Create automation wallet
-POST /api/rules                       # Create multi-market strategy
-GET  /api/rules                       # List active strategies
-GET  /api/executions                  # View execution history
-```
-
-### System
-```
-GET  /health                          # Infrastructure health
-```
-
----
-
-## Example: Multi-Market Strategy
-```typescript
-// Create cross-platform conditional strategy
-const strategy = await createRule({
-  name: "Recession + Hawkish Fed Strategy",
-
-  // Conditions across multiple platforms
-  conditions: [
-    {
-      platform: "kalshi",
-      market: "US_RECESSION_2026",
-      operator: "above",
-      threshold: 0.65
-    },
-    {
-      platform: "polymarket",
-      market: "FED_CUTS_2026",
-      operator: "below",
-      threshold: 0.40
-    }
-  ],
-
-  // Logic: Both must be true
-  logic: "AND",
-
-  // Action: Swap 50% SOL to USDC
-  action: {
-    type: "SWAP",
-    from: "SOL",
-    to: "USDC",
-    percentage: 50
-  }
-});
-
-// TripWire monitors both platforms
-// Executes automatically when conditions met
-// Returns on-chain transaction hash
-```
-
----
-
-## Key Features
-
-**Cross-Platform Intelligence:**
-- ✅ Aggregate Kalshi + Polymarket (expandable to Robinhood, others)
-- ✅ Consensus probabilities (volume-weighted across platforms)
-- ✅ Arbitrage detection (find price differences across venues)
-
-**Multi-Market Strategies:**
-- ✅ Complex conditions (AND/OR logic across multiple markets)
-- ✅ Cross-platform triggers (Kalshi data + Polymarket data → action)
-- ✅ Automated execution (set once, runs continuously)
-
-**Production-Grade Security:**
-- ✅ Non-custodial (user-controlled withdrawal anytime)
-- ✅ Encrypted key storage (AES-256-GCM)
-- ✅ Transaction caps ($10K max per execution)
-- ✅ All actions auditable on-chain
-
----
-
-## Scripts
 ```bash
-npm run dev          # Development server
-npm run build        # Compile TypeScript
-npm start            # Production server
-npm run migrate      # Database migrations
-npm test             # Run tests
-npm run lint         # Code linting
-npm run format       # Code formatting
+git push origin attention-markets-v1
+# Render picks it up, runs: npm install && npm run build && node dist/database/migrate.js
 ```
 
 ---
 
-## Grant Support
-
-**Superteam Ireland:** Cross-platform prediction market infrastructure
-**Kalshi Builders Program:** DeFi automation driving non-sports market volume
-
----
-
-## License
-
-MIT - Open-source infrastructure for the Solana ecosystem
+MIT License
