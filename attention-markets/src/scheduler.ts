@@ -1,16 +1,19 @@
 import cron from 'node-cron';
 import { AttentionIndexComputer } from './index/computer';
 import { SwitchboardOracle } from './oracle/switchboard';
+import { AnchorOracle } from './oracle/anchor-oracle';
 
 export class AttentionScheduler {
     private computer: AttentionIndexComputer;
     private oracle: SwitchboardOracle;
+    private anchorOracle: AnchorOracle;
     private topics: string[];
     private interval: string;
 
     constructor(oracle: SwitchboardOracle) {
         this.computer = new AttentionIndexComputer();
         this.oracle = oracle;
+        this.anchorOracle = new AnchorOracle();
         this.topics = (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
         this.interval = process.env.ATTENTION_UPDATE_INTERVAL_MINUTES || '5';
     }
@@ -49,9 +52,11 @@ export class AttentionScheduler {
             }
         }
 
-        // Push scores on-chain (no-op if SOLANA_PRIVATE_KEY not set)
         if (Object.keys(scores).length > 0) {
+            // Switchboard memo (existing)
             await this.oracle.pushAll(scores);
+            // Anchor program update_doa (Trendle model)
+            await this.anchorOracle.pushAll(scores);
         }
 
         const duration = Date.now() - updateStart.getTime();

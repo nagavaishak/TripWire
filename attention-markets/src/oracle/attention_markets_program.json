@@ -1,0 +1,633 @@
+{
+  "address": "35mr61jToyKGyynBgFtQJ8RnEEx3aoSVa3ofyK7rAgzb",
+  "metadata": {
+    "name": "attention_markets_program",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "docs": [
+    "Attention Markets — perpetual-style trading on Degree of Attention (DoA) scores.",
+    "",
+    "Trendle model (NOT a prediction market):",
+    "• Users open Long/Short positions against a live DoA feed",
+    "• P&L is determined by the ratio of current DoA to entry DoA",
+    "• Positions can be opened and closed at any time — no deadline, no resolution event",
+    "",
+    "P&L formula:",
+    "Long  → payout = stake × (current_doa / entry_doa)   [win when DoA rises]",
+    "Short → payout = stake × (entry_doa  / current_doa)  [win when DoA falls]",
+    "Payout capped at 2× stake (max 100% gain), min 0 (full loss)",
+    "",
+    "Liquidity:",
+    "Oracle pre-funds the vault at market creation.",
+    "User stakes also accumulate in the vault and fund payouts."
+  ],
+  "instructions": [
+    {
+      "name": "close_market",
+      "docs": [
+        "Oracle closes the market (no new positions accepted, existing ones can still close)."
+      ],
+      "discriminator": [
+        88,
+        154,
+        248,
+        186,
+        48,
+        14,
+        123,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_position",
+      "docs": [
+        "User closes their position and receives payout based on DoA change.",
+        "",
+        "Long  payout = stake × (current_doa / entry_doa)   — wins when DoA rises",
+        "Short payout = stake × (entry_doa  / current_doa)  — wins when DoA falls",
+        "",
+        "Capped at 2× stake. If the vault is underfunded, pays what it has."
+      ],
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.topic",
+                "account": "Market"
+              }
+            ]
+          },
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_market",
+      "docs": [
+        "Oracle creates a new attention market and seeds the vault with initial liquidity.",
+        "`initial_funding` is the amount of lamports the oracle deposits as the liquidity pool."
+      ],
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "topic"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "oracle",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "topic",
+          "type": "string"
+        },
+        {
+          "name": "initial_funding",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_position",
+      "docs": [
+        "User opens a Long or Short position on the current DoA score.",
+        "`amount` is the stake in lamports (min 0.001 SOL).",
+        "Entry DoA is recorded at the moment of opening — P&L tracks from here."
+      ],
+      "discriminator": [
+        135,
+        128,
+        47,
+        77,
+        15,
+        152,
+        240,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.topic",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "Direction"
+            }
+          }
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_doa",
+      "docs": [
+        "Oracle pushes a fresh DoA score (0–10_000 basis points = 0.00–100.00).",
+        "Called automatically by the backend every 5 minutes."
+      ],
+      "discriminator": [
+        244,
+        84,
+        171,
+        2,
+        208,
+        98,
+        103,
+        144
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "score",
+          "type": "u16"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "TopicTooLong",
+      "msg": "Topic must be 32 characters or fewer"
+    },
+    {
+      "code": 6001,
+      "name": "InsufficientFunding",
+      "msg": "Initial funding must be greater than 0"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidScore",
+      "msg": "Score must be 0-10000 basis points"
+    },
+    {
+      "code": 6003,
+      "name": "MarketClosed",
+      "msg": "Market is closed — no new positions"
+    },
+    {
+      "code": 6004,
+      "name": "StakeTooSmall",
+      "msg": "Minimum stake is 0.001 SOL (1_000_000 lamports)"
+    },
+    {
+      "code": 6005,
+      "name": "DoaNotSet",
+      "msg": "DoA score has not been set yet — wait for first oracle update"
+    },
+    {
+      "code": 6006,
+      "name": "PositionAlreadyClosed",
+      "msg": "Position is already closed"
+    },
+    {
+      "code": 6007,
+      "name": "InsufficientVaultFunds",
+      "msg": "Vault has insufficient funds"
+    },
+    {
+      "code": 6008,
+      "name": "ArithmeticError",
+      "msg": "Arithmetic overflow or division by zero"
+    },
+    {
+      "code": 6009,
+      "name": "NotPositionOwner",
+      "msg": "You are not the position owner"
+    }
+  ],
+  "types": [
+    {
+      "name": "Direction",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Long"
+          },
+          {
+            "name": "Short"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Market",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "topic",
+            "docs": [
+              "Topic identifier, e.g. \"Solana\" or \"AI\""
+            ],
+            "type": "string"
+          },
+          {
+            "name": "oracle",
+            "docs": [
+              "Pubkey of the authorised oracle"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "doa_score",
+            "docs": [
+              "Latest DoA score in basis points (0–10_000 = 0.00–100.00)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "is_open",
+            "docs": [
+              "Whether new positions can be opened"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "total_long_exposure",
+            "docs": [
+              "Total lamports of open LONG exposure"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_short_exposure",
+            "docs": [
+              "Total lamports of open SHORT exposure"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "market_bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Stake in lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "entry_doa",
+            "docs": [
+              "DoA score (bps) at time of opening"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "is_open",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "Vault PDA — holds all SOL (oracle liquidity + user stakes)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}
