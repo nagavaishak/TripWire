@@ -101,9 +101,9 @@ export class YouTubeCollector {
                 avg_view_weighted_comments
             };
 
-        } catch (error) {
-            console.error(`[YouTube] Error collecting ${topic}:`, error);
-            throw error;
+        } catch (error: any) {
+            console.error(`[YouTube] Error collecting ${topic}:`, error.message || error);
+            return this.emptyMetrics(topic);  // graceful degradation
         }
     }
 

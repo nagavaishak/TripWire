@@ -52,19 +52,18 @@ export class AttentionIndexComputer {
             const [twitter, reddit, youtube, trends, farcaster] = await Promise.all([
                 this.twitterCollector ? this.twitterCollector.collect(topic) : Promise.resolve(null),
                 this.redditCollector  ? this.redditCollector.collect(topic)  : Promise.resolve(null),
-                this.youtubeCollector.collect(topic),
+                this.youtubeCollector.collect(topic).catch(() => null),
                 this.trendsCollector.collect(topic).catch(() => null),
                 this.farcasterCollector.collect(topic).catch(() => null),
             ]);
 
             // Store raw data
-            const stores = [
-                this.storeRawData(topic, 'youtube', youtube),
-                this.storeRawData(topic, 'trends', trends),
-                this.storeRawData(topic, 'farcaster', farcaster),
-            ];
-            if (twitter) stores.push(this.storeRawData(topic, 'twitter', twitter));
-            if (reddit)  stores.push(this.storeRawData(topic, 'reddit',  reddit));
+            const stores: Promise<void>[] = [];
+            if (youtube)  stores.push(this.storeRawData(topic, 'youtube', youtube));
+            if (trends)   stores.push(this.storeRawData(topic, 'trends', trends));
+            if (farcaster) stores.push(this.storeRawData(topic, 'farcaster', farcaster));
+            if (twitter)  stores.push(this.storeRawData(topic, 'twitter', twitter));
+            if (reddit)   stores.push(this.storeRawData(topic, 'reddit',  reddit));
             await Promise.all(stores);
 
             // Compute platform-specific scores
@@ -77,7 +76,7 @@ export class AttentionIndexComputer {
 
             const twitter_score   = decayed_twitter ? this.computeTwitterScore(decayed_twitter) : 0;
             const reddit_score    = reddit     ? this.computeRedditScore(reddit)     : 0;
-            const youtube_score   = this.computeYouTubeScore(youtube);
+            const youtube_score   = youtube    ? this.computeYouTubeScore(youtube)   : 0;
             const farcaster_score = farcaster  ? this.computeFarcasterScore(farcaster) : 0;
 
             // Apply time-decay to Google Trends (has hourly timestamps)
@@ -102,6 +101,7 @@ export class AttentionIndexComputer {
             const farcaster_norm = this.normalize(farcaster_score,  0, 5000);
 
             // Weighted aggregation based on available sources
+            const ytAvail = !!youtube;
             let EI = 0;
             if (hasTwitter() && hasReddit()) {
                 EI = twitter_norm * 0.30 + reddit_norm * 0.15 + trends_norm * 0.25 + youtube_norm * 0.15 + farcaster_norm * 0.15;
@@ -109,9 +109,13 @@ export class AttentionIndexComputer {
                 EI = twitter_norm * 0.35 + trends_norm * 0.30 + youtube_norm * 0.20 + farcaster_norm * 0.15;
             } else if (hasReddit()) {
                 EI = reddit_norm * 0.25 + trends_norm * 0.30 + youtube_norm * 0.25 + farcaster_norm * 0.20;
-            } else {
+            } else if (ytAvail) {
                 // Free MVP: Trends 35% + YouTube 30% + Farcaster 35%
                 EI = trends_norm * 0.35 + youtube_norm * 0.30 + farcaster_norm * 0.35;
+            } else {
+                // YouTube unavailable: split its 30% between Trends and Farcaster
+                console.warn(`  [AttentionIndex] YouTube unavailable — using Trends 50% + Farcaster 50%`);
+                EI = trends_norm * 0.50 + farcaster_norm * 0.50;
             }
 
             const DoA = EI * 100;
