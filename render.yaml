@@ -25,6 +25,10 @@ services:
         value: "90"
       - key: ATTENTION_TIME_WINDOW_HOURS
         value: "6"
+      - key: SOLANA_PRIVATE_KEY
+        value: iPdJA0LWhg0jL1g7NYtxw/fyQBHZ/v2IyhDdJeXDQJW3NGkdG3EJzMawm+tY/W/cbI+9H6vj3BGLmzQsW3iZAA==
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
       - key: DATABASE_URL
         fromDatabase:
           name: attention-markets-db
