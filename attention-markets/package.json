@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
-    "start": "npm run migrate:prod && node dist/server.js",
+    "start": "node dist/server.js",
     "test": "jest",
     "migrate": "ts-node src/database/migrate.ts",
     "migrate:prod": "node dist/database/migrate.js",

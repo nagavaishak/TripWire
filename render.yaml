@@ -1,0 +1,31 @@
+databases:
+  - name: attention-markets-db
+    plan: free
+    databaseName: attention_markets
+    ipAllowList: []
+
+services:
+  - type: web
+    name: attention-markets-api
+    plan: free
+    runtime: node
+    rootDir: attention-markets
+    buildCommand: npm install && npm run build && node dist/database/migrate.js
+    startCommand: node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: YOUTUBE_API_KEY
+        value: AIzaSyBuS1Wfx1xLiu7_Tar3GnFsnOvbRsBN-Ys
+      - key: ATTENTION_TOPICS
+        value: Solana,AI
+      - key: ATTENTION_UPDATE_INTERVAL_MINUTES
+        value: "5"
+      - key: ATTENTION_HALF_LIFE_MINUTES
+        value: "90"
+      - key: ATTENTION_TIME_WINDOW_HOURS
+        value: "6"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: attention-markets-db
+          property: connectionString
