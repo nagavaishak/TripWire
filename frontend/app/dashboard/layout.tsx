@@ -29,6 +29,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <NavTab href="/dashboard/portfolio" label="Portfolio" />
             </div>
 
+            {/* Home link */}
+            <a
+              href="/"
+              className="shrink-0 hidden sm:flex items-center gap-1.5 text-xs font-[family-name:var(--font-mono)] text-[#55555E] hover:text-[#8A8A95] transition-colors"
+            >
+              <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 6L8 1L14 6V14H10V10H6V14H2V6Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+              </svg>
+              Home
+            </a>
+
             {/* Wallet */}
             <WalletButton />
           </div>

@@ -12,15 +12,6 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // If already authenticated and hitting landing, send to dashboard
-  if (pathname === '/') {
-    const hasAccess = request.cookies.get('tw_access')?.value === '1';
-    const fromGate = request.nextUrl.searchParams.get('gate');
-    if (hasAccess && !fromGate) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
-  }
-
   return NextResponse.next();
 }
 
