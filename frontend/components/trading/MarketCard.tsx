@@ -42,24 +42,63 @@ function Sparkline({ points, slug, isUp }: { points: number[]; slug: string; isU
   );
 }
 
-// ── Topic icon colors ──────────────────────────────────────────
+// ── Topic icon config ──────────────────────────────────────────
+// Use crypto logo URLs for known assets, emoji for others, initials as fallback
+const TOPIC_LOGO: Record<string, string> = {
+  Solana:   'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/sol.png',
+  Bitcoin:  'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/btc.png',
+  Ethereum: 'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/eth.png',
+  Btc:      'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/btc.png',
+  Xrp:      'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/xrp.png',
+  Ripple:   'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/xrp.png',
+};
+
+const TOPIC_EMOJI: Record<string, string> = {
+  AI:         '🤖',
+  Memecoins:  '🐸',
+  Chatgpt:    '💬',
+  Gpt:        '💬',
+  'Chat Gpt': '💬',
+  'Chatgpt Ai': '💬',
+  Gemini:     '✨',
+  Perplexity: '🔍',
+};
+
 const ICON_COLORS: Record<string, string> = {
   Solana:    '#9945FF',
   AI:        '#00D4FF',
   Bitcoin:   '#F7931A',
+  Btc:       '#F7931A',
   Ethereum:  '#627EEA',
   Memecoins: '#FF6B9D',
 };
 
 function TopicIcon({ name }: { name: string }) {
-  const bg = ICON_COLORS[name] ?? '#FFB800';
+  const logoUrl = TOPIC_LOGO[name];
+  const emoji   = TOPIC_EMOJI[name];
+  const bg      = ICON_COLORS[name] ?? '#2E2E33';
   const initials = name.length <= 2 ? name.toUpperCase() : name.slice(0, 2).toUpperCase();
+
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt={name}
+        className="w-9 h-9 rounded-full object-cover shrink-0"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+      />
+    );
+  }
+
   return (
     <div
-      className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
-      style={{ background: bg }}
+      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-base"
+      style={{ background: emoji ? '#1A1A1D' : bg }}
     >
-      {initials}
+      {emoji ?? (
+        <span className="text-[11px] font-bold text-white">{initials}</span>
+      )}
     </div>
   );
 }
