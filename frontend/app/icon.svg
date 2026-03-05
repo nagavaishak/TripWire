@@ -1,13 +1,19 @@
 <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Void background -->
   <rect width="32" height="32" rx="7" fill="#0A0A0B"/>
-  <!-- Signal pulse: flat → spike up → dip → flat (tripwire trigger) -->
-  <polyline
-    points="2,16 8,16 10,6 13,26 16,16 30,16"
-    stroke="#FFB800"
-    stroke-width="2.4"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-  <!-- Amber glow dot at trigger point -->
-  <circle cx="10" cy="6" r="1.5" fill="#FFB800" opacity="0.7"/>
+
+  <!-- Outer ring — faint -->
+  <circle cx="16" cy="16" r="12.5" stroke="#FFB800" stroke-width="1" opacity="0.25"/>
+
+  <!-- Main reticle ring -->
+  <circle cx="16" cy="16" r="7.5" stroke="#FFB800" stroke-width="2"/>
+
+  <!-- Cross hairs — gap in middle, only outer arms -->
+  <line x1="16" y1="1.5" x2="16" y2="7.5"  stroke="#FFB800" stroke-width="2" stroke-linecap="round"/>
+  <line x1="16" y1="24.5" x2="16" y2="30.5" stroke="#FFB800" stroke-width="2" stroke-linecap="round"/>
+  <line x1="1.5" y1="16" x2="7.5"  y2="16"  stroke="#FFB800" stroke-width="2" stroke-linecap="round"/>
+  <line x1="24.5" y1="16" x2="30.5" y2="16" stroke="#FFB800" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Center dot — hot amber -->
+  <circle cx="16" cy="16" r="2.5" fill="#FFB800"/>
 </svg>
