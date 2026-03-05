@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="7" fill="#0A0A0B"/>
+  <!-- Signal pulse: flat → spike up → dip → flat (tripwire trigger) -->
+  <polyline
+    points="2,16 8,16 10,6 13,26 16,16 30,16"
+    stroke="#FFB800"
+    stroke-width="2.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Amber glow dot at trigger point -->
+  <circle cx="10" cy="6" r="1.5" fill="#FFB800" opacity="0.7"/>
+</svg>
