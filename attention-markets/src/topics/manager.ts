@@ -27,3 +27,54 @@ export async function getAllTopics(): Promise<Topic[]> {
     );
     return result.rows;
 }
+
+/**
+ * Auto-promote global narratives to tracked topics when they hit breakout level.
+ * Threshold: growth >= 50,000 (Breakout tier) and seen in the last 2 hours.
+ * Caps at MAX_AUTO_TOPICS active topics to avoid runaway growth.
+ */
+const MAX_AUTO_TOPICS = 10;
+
+export async function promoteNarrativesToTopics(): Promise<void> {
+    try {
+        // How many active topics do we already have?
+        const countRes = await db.query(
+            `SELECT COUNT(*) AS c FROM topics WHERE status = 'active'`
+        );
+        const activeCount = parseInt(countRes.rows[0].c, 10);
+        if (activeCount >= MAX_AUTO_TOPICS) return;
+
+        const slots = MAX_AUTO_TOPICS - activeCount;
+
+        // Find breakout global narratives not already tracked as a topic
+        const candidates = await db.query(`
+            SELECT keyword
+            FROM narratives
+            WHERE source     = '_global'
+              AND growth     >= 50000
+              AND status     = 'trending'
+              AND detected_at > NOW() - INTERVAL '2 hours'
+              AND keyword NOT IN (SELECT LOWER(name) FROM topics)
+            ORDER BY growth DESC
+            LIMIT $1
+        `, [slots]);
+
+        for (const row of candidates.rows) {
+            const name = row.keyword
+                .split(' ')
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(' ');
+            const slug = row.keyword.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+            await db.query(`
+                INSERT INTO topics (name, slug, status)
+                VALUES ($1, $2, 'active')
+                ON CONFLICT (name) DO UPDATE SET status = 'active'
+            `, [name, slug]);
+
+            console.log(`[Topics] Auto-promoted: "${name}" (breakout narrative)`);
+        }
+    } catch (err: any) {
+        console.error('[Topics] Promotion failed:', err.message);
+    }
+}

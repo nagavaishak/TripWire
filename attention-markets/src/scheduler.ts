@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { AttentionIndexComputer } from './index/computer';
 import { SwitchboardOracle } from './oracle/switchboard';
 import { AnchorOracle } from './oracle/anchor-oracle';
-import { getActiveTopics } from './topics/manager';
+import { getActiveTopics, promoteNarrativesToTopics } from './topics/manager';
 import { detectNarratives, detectGlobalNarratives, updateNarrativeLifecycle } from './narratives/detector';
 
 export class AttentionScheduler {
@@ -61,10 +61,14 @@ export class AttentionScheduler {
             await this.anchorOracle.pushAll(scores);
         }
 
-        // Narrative detection — fire-and-forget, never blocks compute pipeline
+        // Narrative detection + lifecycle + auto-promotion — fire-and-forget
+        // Order matters: global detection → promote → per-topic → lifecycle
+        detectGlobalNarratives()
+            .then(() => promoteNarrativesToTopics())
+            .catch((err: any) => console.error('[Narratives] Global/promote failed:', err.message));
+
         Promise.allSettled([
             ...topics.map(topic => detectNarratives(topic)),
-            detectGlobalNarratives(),
             updateNarrativeLifecycle(),
         ]).then(results => {
             const failed = results.filter(r => r.status === 'rejected').length;
