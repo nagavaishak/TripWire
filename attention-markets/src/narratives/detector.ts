@@ -1,5 +1,7 @@
 // @ts-ignore — no types for google-trends-api
 import googleTrends from 'google-trends-api';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { db } from '../database/connection';
 
 function narrativeStatus(growth: number): string {
@@ -55,40 +57,41 @@ export async function detectNarratives(baseTopic: string): Promise<void> {
 }
 
 /**
- * Detect global breakout topics via Google Trends dailyTrends (US).
- * Catches events like "Iran war" that are unrelated to configured topics.
- * Called once per scheduler cycle.
+ * Detect global breakout topics via Google Trends RSS feed (US).
+ * Uses the public RSS endpoint which works from cloud IPs unlike the JSON API.
+ * Catches events like "Iran war" unrelated to configured topics.
  */
 export async function detectGlobalNarratives(): Promise<void> {
     try {
-        const raw = await googleTrends.dailyTrends({ geo: 'US' });
-        const data = JSON.parse(raw);
-        const days: any[] = data?.default?.trendingSearchesDays || [];
-        const searches: any[] = days[0]?.trendingSearches || [];
+        const res = await axios.get(
+            'https://trends.google.com/trends/trendingsearches/daily/rss?geo=US',
+            { timeout: 10_000, headers: { 'User-Agent': 'Mozilla/5.0' } }
+        );
 
-        if (searches.length === 0) {
-            console.log('[Narratives] Global: no daily trends found');
+        const $ = cheerio.load(res.data, { xmlMode: true });
+        const items = $('item');
+
+        if (items.length === 0) {
+            console.log('[Narratives] Global RSS: no items found');
             return;
         }
 
         let inserted = 0;
-        for (const item of searches.slice(0, 20)) {
-            const keyword = item.title?.query?.toLowerCase()?.trim();
-            if (!keyword) continue;
+        items.each((_i, el) => {
+            const keyword = $(el).find('title').first().text()?.toLowerCase()?.trim();
+            if (!keyword) return;
 
-            // Parse traffic: "200K+" → 200000, "2M+" → 2000000
-            const traffic: string = item.formattedTraffic || '0';
-            const multiplier = traffic.includes('M') ? 1_000_000 : traffic.includes('K') ? 1_000 : 1;
-            const num = parseFloat(traffic.replace(/[^0-9.]/g, '')) || 0;
-            const growth = Math.round(num * multiplier);
+            // ht:approx_traffic looks like "2,000,000+" — parse to number
+            const trafficStr = $(el).find('ht\\:approx_traffic').text() || '0';
+            const num = parseInt(trafficStr.replace(/[^0-9]/g, ''), 10) || 0;
 
-            await upsertNarrative(keyword, '_global', growth);
+            upsertNarrative(keyword, '_global', num).catch(() => {});
             inserted++;
-        }
+        });
 
-        console.log(`[Narratives] Global: ${inserted} trending topics stored`);
+        console.log(`[Narratives] Global RSS: ${inserted} trending topics stored`);
     } catch (err: any) {
-        console.error('[Narratives] Global detection failed:', err.message);
+        console.error('[Narratives] Global RSS failed:', err.message);
     }
 }
 

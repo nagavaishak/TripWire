@@ -74,15 +74,15 @@ export async function promoteNarrativesToTopics(): Promise<void> {
 
         const slots = MAX_AUTO_TOPICS - activeCount;
 
-        // Only promote from _global (dailyTrends) — per-topic related queries
-        // are sub-phrases of existing topics and create noise cards.
+        // Only promote from _global (RSS trending feed).
+        // RSS traffic numbers are raw search volume (e.g. 2,000,000).
+        // Threshold: 100k+ searches = genuinely trending nationally.
         const candidates = await db.query(`
             SELECT keyword, MAX(growth) AS growth
             FROM narratives
-            WHERE source     = '_global'
-              AND growth     >= 50000
-              AND status     = 'trending'
-              AND detected_at > NOW() - INTERVAL '2 hours'
+            WHERE source      = '_global'
+              AND growth      >= 100000
+              AND detected_at  > NOW() - INTERVAL '2 hours'
               AND LOWER(keyword) NOT IN (SELECT LOWER(name) FROM topics)
             GROUP BY keyword
             ORDER BY growth DESC
