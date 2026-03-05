@@ -56,42 +56,56 @@ export async function detectNarratives(baseTopic: string): Promise<void> {
     }
 }
 
+// Pages to skip — Wikipedia meta/utility pages
+const WIKI_SKIP = new Set([
+    'main page', 'special:', 'wikipedia:', 'portal:', 'help:', 'file:',
+    'deaths in', 'list of', 'template:', 'category:',
+]);
+
+function shouldSkip(title: string): boolean {
+    const lower = title.toLowerCase();
+    return WIKI_SKIP.has(lower) || [...WIKI_SKIP].some(s => lower.startsWith(s));
+}
+
 /**
- * Detect global breakout topics via Google Trends RSS feed (US).
- * Uses the public RSS endpoint which works from cloud IPs unlike the JSON API.
- * Catches events like "Iran war" unrelated to configured topics.
+ * Detect global trending topics via Wikipedia Most-Read API.
+ * Returns the top-viewed Wikipedia articles for today — a reliable signal
+ * for what the world is actually paying attention to (Iran, Trump, etc.)
+ * No API key needed, works from any IP.
  */
 export async function detectGlobalNarratives(): Promise<void> {
     try {
-        const res = await axios.get(
-            'https://trends.google.com/trends/trendingsearches/daily/rss?geo=US',
-            { timeout: 10_000, headers: { 'User-Agent': 'Mozilla/5.0' } }
-        );
+        // Use yesterday's date (today's full data isn't available until ~midnight UTC)
+        const d = new Date(Date.now() - 86_400_000);
+        const yyyy = d.getUTCFullYear();
+        const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd   = String(d.getUTCDate()).padStart(2, '0');
 
-        const $ = cheerio.load(res.data, { xmlMode: true });
-        const items = $('item');
+        const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${yyyy}/${mm}/${dd}`;
+        const res = await axios.get(url, { timeout: 10_000 });
 
-        if (items.length === 0) {
-            console.log('[Narratives] Global RSS: no items found');
+        const articles: any[] = res.data?.items?.[0]?.articles ?? [];
+        if (articles.length === 0) {
+            console.log('[Narratives] Wikipedia: no trending articles found');
             return;
         }
 
         let inserted = 0;
-        items.each((_i, el) => {
-            const keyword = $(el).find('title').first().text()?.toLowerCase()?.trim();
-            if (!keyword) return;
+        for (const article of articles.slice(0, 50)) {
+            const raw   = (article.article as string).replace(/_/g, ' ').trim();
+            const keyword = raw.toLowerCase();
+            if (shouldSkip(keyword)) continue;
 
-            // ht:approx_traffic looks like "2,000,000+" — parse to number
-            const trafficStr = $(el).find('ht\\:approx_traffic').text() || '0';
-            const num = parseInt(trafficStr.replace(/[^0-9]/g, ''), 10) || 0;
+            // views = actual Wikipedia pageviews; use as growth signal
+            const growth = article.views as number;
 
-            upsertNarrative(keyword, '_global', num).catch(() => {});
+            await upsertNarrative(keyword, '_global', growth);
             inserted++;
-        });
+        }
 
-        console.log(`[Narratives] Global RSS: ${inserted} trending topics stored`);
+        console.log(`[Narratives] Wikipedia: ${inserted} trending topics stored`);
     } catch (err: any) {
-        console.error('[Narratives] Global RSS failed:', err.message);
+        console.error('[Narratives] Wikipedia trending failed:', err.message);
     }
 }
 

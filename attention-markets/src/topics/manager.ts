@@ -81,7 +81,7 @@ export async function promoteNarrativesToTopics(): Promise<void> {
             SELECT keyword, MAX(growth) AS growth
             FROM narratives
             WHERE source      = '_global'
-              AND growth      >= 100000
+              AND growth      >= 500000
               AND detected_at  > NOW() - INTERVAL '2 hours'
               AND LOWER(keyword) NOT IN (SELECT LOWER(name) FROM topics)
             GROUP BY keyword
