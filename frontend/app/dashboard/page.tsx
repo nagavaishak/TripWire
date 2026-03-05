@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { oracleClient } from '@/lib/api';
 import { MarketHeader } from '@/components/trading/MarketHeader';
 import { DoaChart } from '@/components/trading/DoaChart';
+import { TAIBreakdown } from '@/components/trading/TAIBreakdown';
 import { SourceBreakdown } from '@/components/trading/SourceBreakdown';
 import { SignalFeed } from '@/components/trading/SignalFeed';
 import { TradePanel } from '@/components/trading/TradePanel';
@@ -53,6 +54,10 @@ export default function TradePage() {
             onSelectTopic={setSelectedTopic}
           />
           <DoaChart topic={selectedTopic} />
+
+          {/* TAI Signal Breakdown — core upgrade */}
+          <TAIBreakdown topic={selectedTopic} />
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <SourceBreakdown topic={selectedTopic} />
             <SignalFeed topic={selectedTopic} />

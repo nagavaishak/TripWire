@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { AttentionIndexComputer } from './index/computer';
 import { SwitchboardOracle } from './oracle/switchboard';
 import { AnchorOracle } from './oracle/anchor-oracle';
+import { detectNarratives } from './narratives/detector';
 
 export class AttentionScheduler {
     private computer: AttentionIndexComputer;
@@ -37,7 +38,7 @@ export class AttentionScheduler {
 
     private async runUpdate() {
         const updateStart = new Date();
-        console.log(`\n⏰ [${updateStart.toISOString()}] Update cycle starting...`);
+        console.log(`\n⏰ [${updateStart.toISOString()}] TAI update cycle starting...`);
         console.log('─'.repeat(60));
 
         const scores: Record<string, number> = {};
@@ -46,18 +47,25 @@ export class AttentionScheduler {
             try {
                 const doa = await this.computer.compute(topic);
                 scores[topic] = doa;
-                console.log(`✓ ${topic.padEnd(15)} → ${doa.toFixed(2)} DoA`);
+                console.log(`✓ ${topic.padEnd(15)} → ${doa.toFixed(2)} DoA (TAI)`);
             } catch (error: any) {
                 console.error(`✗ ${topic.padEnd(15)} → FAILED: ${error.message}`);
             }
         }
 
         if (Object.keys(scores).length > 0) {
-            // Switchboard memo (existing)
+            // Push DoA on-chain (program still receives score_bps, unchanged)
             await this.oracle.pushAll(scores);
-            // Anchor program update_doa (Trendle model)
             await this.anchorOracle.pushAll(scores);
         }
+
+        // Narrative detection — fire-and-forget, never blocks compute pipeline
+        Promise.allSettled(
+            this.topics.map(topic => detectNarratives(topic))
+        ).then(results => {
+            const failed = results.filter(r => r.status === 'rejected').length;
+            if (failed > 0) console.warn(`[Narratives] ${failed} topic(s) failed detection`);
+        });
 
         const duration = Date.now() - updateStart.getTime();
         console.log('─'.repeat(60));
