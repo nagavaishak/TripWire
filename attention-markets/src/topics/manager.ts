@@ -21,6 +21,22 @@ export async function getActiveTopics(): Promise<string[]> {
     return (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
 }
 
+const CURATED_TOPICS = ['Solana', 'AI', 'Bitcoin', 'Ethereum', 'Memecoins'];
+
+export async function cleanupNoiseTopics(): Promise<void> {
+    try {
+        const result = await db.query(
+            `DELETE FROM topics WHERE name NOT IN (${CURATED_TOPICS.map((_, i) => `$${i + 1}`).join(',')})`,
+            CURATED_TOPICS
+        );
+        if (result.rowCount && result.rowCount > 0) {
+            console.log(`[Topics] Cleaned up ${result.rowCount} noise topics`);
+        }
+    } catch (err: any) {
+        console.error('[Topics] Cleanup failed:', err.message);
+    }
+}
+
 export async function getAllTopics(): Promise<Topic[]> {
     const result = await db.query(
         `SELECT id, name, slug, status FROM topics ORDER BY id`

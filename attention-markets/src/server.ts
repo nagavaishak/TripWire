@@ -7,7 +7,7 @@ import narrativesRoutes from './routes/narratives.routes';
 import topicsRoutes from './routes/topics.routes';
 import { AttentionScheduler } from './scheduler';
 import { SwitchboardOracle } from './oracle/switchboard';
-import { getActiveTopics } from './topics/manager';
+import { getActiveTopics, cleanupNoiseTopics } from './topics/manager';
 
 dotenv.config();
 
@@ -83,7 +83,10 @@ app.get('/api/oracle/health', async (_req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+    // Remove any noise topics that were auto-promoted from related queries
+    await cleanupNoiseTopics();
+
     console.log(`\n Attention Markets API running on port ${PORT}`);
     console.log(`   Health:     http://localhost:${PORT}/health`);
     console.log(`   Oracle:     http://localhost:${PORT}/api/oracle/feeds`);
