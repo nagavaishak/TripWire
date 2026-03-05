@@ -11,11 +11,15 @@ async function migrate() {
         await db.query(schema);
         console.log('✓ 001 base schema');
 
-        // 002: add Google Trends + Farcaster columns
-        const m002 = path.join(__dirname, 'migrations', '002_add_trends_farcaster.sql');
-        if (fs.existsSync(m002)) {
-            await db.query(fs.readFileSync(m002, 'utf-8'));
-            console.log('✓ 002 trends + farcaster columns');
+        // Run all numbered migrations in order
+        const migrationsDir = path.join(__dirname, 'migrations');
+        const files = fs.readdirSync(migrationsDir)
+            .filter(f => f.endsWith('.sql'))
+            .sort();
+
+        for (const file of files) {
+            await db.query(fs.readFileSync(path.join(migrationsDir, file), 'utf-8'));
+            console.log(`✓ ${file}`);
         }
 
         console.log('✓ All migrations complete');
