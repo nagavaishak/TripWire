@@ -46,15 +46,19 @@ export async function promoteNarrativesToTopics(): Promise<void> {
 
         const slots = MAX_AUTO_TOPICS - activeCount;
 
-        // Find breakout global narratives not already tracked as a topic
+        // Find breakout narratives not already tracked as a topic.
+        // Includes both _global source and cross-topic spillover
+        // (e.g. "bitcoin" surfacing in Solana related queries at 500K growth).
+        // Exclude sub-phrases of their own source topic.
         const candidates = await db.query(`
-            SELECT keyword
+            SELECT keyword, MAX(growth) AS growth
             FROM narratives
-            WHERE source     = '_global'
-              AND growth     >= 50000
+            WHERE growth     >= 50000
               AND status     = 'trending'
               AND detected_at > NOW() - INTERVAL '2 hours'
-              AND keyword NOT IN (SELECT LOWER(name) FROM topics)
+              AND LOWER(keyword) NOT IN (SELECT LOWER(name) FROM topics)
+              AND (source = '_global' OR LOWER(keyword) NOT LIKE '%' || LOWER(source) || '%')
+            GROUP BY keyword
             ORDER BY growth DESC
             LIMIT $1
         `, [slots]);
