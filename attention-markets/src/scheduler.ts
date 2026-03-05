@@ -2,20 +2,19 @@ import cron from 'node-cron';
 import { AttentionIndexComputer } from './index/computer';
 import { SwitchboardOracle } from './oracle/switchboard';
 import { AnchorOracle } from './oracle/anchor-oracle';
-import { detectNarratives } from './narratives/detector';
+import { getActiveTopics } from './topics/manager';
+import { detectNarratives, detectGlobalNarratives, updateNarrativeLifecycle } from './narratives/detector';
 
 export class AttentionScheduler {
     private computer: AttentionIndexComputer;
     private oracle: SwitchboardOracle;
     private anchorOracle: AnchorOracle;
-    private topics: string[];
     private interval: string;
 
     constructor(oracle: SwitchboardOracle) {
         this.computer = new AttentionIndexComputer();
         this.oracle = oracle;
         this.anchorOracle = new AnchorOracle();
-        this.topics = (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
         this.interval = process.env.ATTENTION_UPDATE_INTERVAL_MINUTES || '5';
     }
 
@@ -23,9 +22,9 @@ export class AttentionScheduler {
         console.log('\n╔══════════════════════════════════════╗');
         console.log('║   Attention Index Scheduler Started  ║');
         console.log('╚══════════════════════════════════════╝');
-        console.log(`Topics:      ${this.topics.join(', ')}`);
         console.log(`Interval:    Every ${this.interval} minutes`);
-        console.log(`Half-life:   ${process.env.ATTENTION_HALF_LIFE_MINUTES || 90} minutes\n`);
+        console.log(`Half-life:   ${process.env.ATTENTION_HALF_LIFE_MINUTES || 90} minutes`);
+        console.log(`Topics:      DB-driven (topics table)\n`);
 
         // Run immediately on start
         this.runUpdate();
@@ -41,9 +40,13 @@ export class AttentionScheduler {
         console.log(`\n⏰ [${updateStart.toISOString()}] TAI update cycle starting...`);
         console.log('─'.repeat(60));
 
+        // Read active topics from DB each cycle (supports hot-add of topics)
+        const topics = await getActiveTopics();
+        console.log(`Topics: ${topics.join(', ')}`);
+
         const scores: Record<string, number> = {};
 
-        for (const topic of this.topics) {
+        for (const topic of topics) {
             try {
                 const doa = await this.computer.compute(topic);
                 scores[topic] = doa;
@@ -54,17 +57,18 @@ export class AttentionScheduler {
         }
 
         if (Object.keys(scores).length > 0) {
-            // Push DoA on-chain (program still receives score_bps, unchanged)
             await this.oracle.pushAll(scores);
             await this.anchorOracle.pushAll(scores);
         }
 
         // Narrative detection — fire-and-forget, never blocks compute pipeline
-        Promise.allSettled(
-            this.topics.map(topic => detectNarratives(topic))
-        ).then(results => {
+        Promise.allSettled([
+            ...topics.map(topic => detectNarratives(topic)),
+            detectGlobalNarratives(),
+            updateNarrativeLifecycle(),
+        ]).then(results => {
             const failed = results.filter(r => r.status === 'rejected').length;
-            if (failed > 0) console.warn(`[Narratives] ${failed} topic(s) failed detection`);
+            if (failed > 0) console.warn(`[Narratives] ${failed} task(s) failed`);
         });
 
         const duration = Date.now() - updateStart.getTime();

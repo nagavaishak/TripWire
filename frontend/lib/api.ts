@@ -37,7 +37,18 @@ export interface Narrative {
   keyword:     string;
   source:      string;
   growth:      number;
+  status:      'emerging' | 'trending' | 'fading' | 'dead';
   detected_at: string;
+}
+
+export interface TopicMeta {
+  id:           number;
+  name:         string;
+  slug:         string;
+  status:       'active' | 'inactive';
+  doa:          number | null;
+  tai_score:    number | null;
+  last_updated: string | null;
 }
 
 export interface NarrativesResponse {
@@ -69,4 +80,10 @@ export const oracleClient = {
     topic
       ? get<{ topic: string; narratives: Narrative[] }>(`/api/narratives/${encodeURIComponent(topic)}`)
       : get<NarrativesResponse>('/api/narratives'),
+
+  getGlobalNarratives: () =>
+    get<NarrativesResponse>('/api/narratives/global'),
+
+  getTopics: () =>
+    get<{ topics: TopicMeta[] }>('/api/topics'),
 };

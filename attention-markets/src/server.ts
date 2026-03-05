@@ -4,8 +4,10 @@ import dotenv from 'dotenv';
 import { db } from './database/connection';
 import attentionRoutes from './routes/attention.routes';
 import narrativesRoutes from './routes/narratives.routes';
+import topicsRoutes from './routes/topics.routes';
 import { AttentionScheduler } from './scheduler';
 import { SwitchboardOracle } from './oracle/switchboard';
+import { getActiveTopics } from './topics/manager';
 
 dotenv.config();
 
@@ -19,6 +21,7 @@ app.use(express.json());
 
 app.use('/api', attentionRoutes);
 app.use('/api', narrativesRoutes);
+app.use('/api', topicsRoutes);
 
 // Oracle feed registry endpoint
 app.get('/api/oracle/feeds', (_req, res) => {
@@ -41,7 +44,7 @@ app.get('/health', (_req, res) => {
 
 app.get('/api/oracle/health', async (_req, res) => {
     try {
-        const topics = (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
+        const topics = await getActiveTopics();
 
         const checks = await Promise.all(topics.map(async topic => {
             const result = await db.query(`
@@ -81,15 +84,11 @@ app.get('/api/oracle/health', async (_req, res) => {
 });
 
 app.listen(PORT, () => {
-    const topics = (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
-
-    console.log(`\n🚀 Attention Markets API running on port ${PORT}`);
+    console.log(`\n Attention Markets API running on port ${PORT}`);
     console.log(`   Health:     http://localhost:${PORT}/health`);
     console.log(`   Oracle:     http://localhost:${PORT}/api/oracle/feeds`);
+    console.log(`   Topics:     http://localhost:${PORT}/api/topics`);
     console.log(`   Narratives: http://localhost:${PORT}/api/narratives`);
-    topics.forEach(t => {
-        console.log(`   ${t.padEnd(8)}  http://localhost:${PORT}/api/attention/${encodeURIComponent(t)}`);
-    });
     console.log(`   All:        http://localhost:${PORT}/api/attention\n`);
 
     const scheduler = new AttentionScheduler(oracle);

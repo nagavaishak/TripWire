@@ -3,7 +3,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { oracleClient } from '@/lib/api';
-import { MARKETS } from '@/lib/constants';
 import { CountdownTimer } from './CountdownTimer';
 
 interface MarketHeaderProps {
@@ -12,6 +11,19 @@ interface MarketHeaderProps {
 }
 
 export function MarketHeader({ selectedTopic, onSelectTopic }: MarketHeaderProps) {
+  const { data: topicsData } = useQuery({
+    queryKey: ['topics'],
+    queryFn: () => oracleClient.getTopics(),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  // Fall back to Solana+AI while loading
+  const markets = topicsData?.topics ?? [
+    { name: 'Solana', status: 'active' as const },
+    { name: 'AI',     status: 'active' as const },
+  ];
+
   const { data } = useQuery({
     queryKey: ['topic', selectedTopic],
     queryFn: () => oracleClient.getTopic(selectedTopic),
@@ -42,30 +54,33 @@ export function MarketHeader({ selectedTopic, onSelectTopic }: MarketHeaderProps
       {/* Topic tabs + countdown */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {MARKETS.map(({ topic, enabled }) => (
-            <button
-              key={topic}
-              disabled={!enabled}
-              onClick={() => enabled && onSelectTopic(topic)}
-              className={`inline-flex items-center gap-1.5 text-sm font-[family-name:var(--font-space)] font-semibold px-3.5 py-1.5 rounded-lg border transition-all ${
-                selectedTopic === topic && enabled
-                  ? 'bg-[#FFB800]/10 border-[#FFB800]/30 text-[#FFB800]'
-                  : enabled
-                  ? 'bg-transparent border-[#222225] text-[#8A8A95] hover:border-[#2E2E33] hover:text-[#EAEAEC]'
-                  : 'bg-transparent border-[#1A1A1D] text-[#55555E] cursor-not-allowed opacity-50'
-              }`}
-            >
-              {topic}
-              {!enabled && (
-                <svg viewBox="0 0 12 12" className="w-3 h-3 fill-current" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M6 1a2.5 2.5 0 00-2.5 2.5V5H2.5A1.5 1.5 0 001 6.5v4A1.5 1.5 0 002.5 12h7A1.5 1.5 0 0011 10.5v-4A1.5 1.5 0 009.5 5H8.5V3.5A2.5 2.5 0 006 1zm1.5 4H4.5V3.5a1.5 1.5 0 013 0V5z"/>
-                </svg>
-              )}
-              {selectedTopic === topic && enabled && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#FFB800] animate-pulse" />
-              )}
-            </button>
-          ))}
+          {markets.map(({ name, status }) => {
+            const enabled = status === 'active';
+            return (
+              <button
+                key={name}
+                disabled={!enabled}
+                onClick={() => enabled && onSelectTopic(name)}
+                className={`inline-flex items-center gap-1.5 text-sm font-[family-name:var(--font-space)] font-semibold px-3.5 py-1.5 rounded-lg border transition-all ${
+                  selectedTopic === name && enabled
+                    ? 'bg-[#FFB800]/10 border-[#FFB800]/30 text-[#FFB800]'
+                    : enabled
+                    ? 'bg-transparent border-[#222225] text-[#8A8A95] hover:border-[#2E2E33] hover:text-[#EAEAEC]'
+                    : 'bg-transparent border-[#1A1A1D] text-[#55555E] cursor-not-allowed opacity-50'
+                }`}
+              >
+                {name}
+                {!enabled && (
+                  <svg viewBox="0 0 12 12" className="w-3 h-3 fill-current" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 1a2.5 2.5 0 00-2.5 2.5V5H2.5A1.5 1.5 0 001 6.5v4A1.5 1.5 0 002.5 12h7A1.5 1.5 0 0011 10.5v-4A1.5 1.5 0 009.5 5H8.5V3.5A2.5 2.5 0 006 1zm1.5 4H4.5V3.5a1.5 1.5 0 013 0V5z"/>
+                  </svg>
+                )}
+                {selectedTopic === name && enabled && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FFB800] animate-pulse" />
+                )}
+              </button>
+            );
+          })}
         </div>
         <CountdownTimer lastUpdateTimestamp={data?.timestamp} />
       </div>
