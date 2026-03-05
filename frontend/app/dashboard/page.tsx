@@ -11,6 +11,7 @@ import { SourceBreakdown } from '@/components/trading/SourceBreakdown';
 import { SignalFeed } from '@/components/trading/SignalFeed';
 import { TradePanel } from '@/components/trading/TradePanel';
 import { PositionsList } from '@/components/trading/PositionsList';
+import { GlobalPulse } from '@/components/trading/GlobalPulse';
 import { useEffect } from 'react';
 
 export default function TradePage() {
@@ -62,6 +63,8 @@ export default function TradePage() {
             <SourceBreakdown topic={selectedTopic} />
             <SignalFeed topic={selectedTopic} />
           </div>
+
+          <GlobalPulse />
         </div>
 
         {/* ── Right column (sticky trade panel) ───────────────── */}
