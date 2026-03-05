@@ -48,6 +48,7 @@ const TOPIC_LOGO: Record<string, string> = {
   Solana:   'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/sol.png',
   Bitcoin:  'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/btc.png',
   Ethereum: 'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/eth.png',
+  XRP:      'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/xrp.png',
   Btc:      'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/btc.png',
   Xrp:      'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/xrp.png',
   Ripple:   'https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/xrp.png',

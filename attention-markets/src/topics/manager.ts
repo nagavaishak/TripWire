@@ -21,16 +21,28 @@ export async function getActiveTopics(): Promise<string[]> {
     return (process.env.ATTENTION_TOPICS || 'Solana,AI').split(',').map(t => t.trim());
 }
 
-const CURATED_TOPICS = ['Solana', 'AI', 'Bitcoin', 'Ethereum', 'Memecoins'];
+const CURATED_TOPICS = ['Solana', 'AI', 'Bitcoin', 'Ethereum', 'XRP'];
+const ACTIVE_TOPICS  = ['Solana', 'AI', 'Bitcoin', 'Ethereum', 'XRP'];
 
 export async function cleanupNoiseTopics(): Promise<void> {
     try {
-        const result = await db.query(
+        // Remove anything not in the curated list
+        const del = await db.query(
             `DELETE FROM topics WHERE name NOT IN (${CURATED_TOPICS.map((_, i) => `$${i + 1}`).join(',')})`,
             CURATED_TOPICS
         );
-        if (result.rowCount && result.rowCount > 0) {
-            console.log(`[Topics] Cleaned up ${result.rowCount} noise topics`);
+        if (del.rowCount && del.rowCount > 0) {
+            console.log(`[Topics] Cleaned up ${del.rowCount} noise topics`);
+        }
+
+        // Ensure curated topics exist and are active
+        for (const name of ACTIVE_TOPICS) {
+            const slug = name.toLowerCase().replace(/\s+/g, '-');
+            await db.query(
+                `INSERT INTO topics (name, slug, status) VALUES ($1, $2, 'active')
+                 ON CONFLICT (name) DO UPDATE SET status = 'active'`,
+                [name, slug]
+            );
         }
     } catch (err: any) {
         console.error('[Topics] Cleanup failed:', err.message);
