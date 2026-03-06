@@ -82,7 +82,10 @@ export async function detectGlobalNarratives(): Promise<void> {
         const dd   = String(d.getUTCDate()).padStart(2, '0');
 
         const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${yyyy}/${mm}/${dd}`;
-        const res = await axios.get(url, { timeout: 10_000 });
+        const res = await axios.get(url, {
+            timeout: 15_000,
+            headers: { 'User-Agent': 'TripWireAttentionOracle/1.0 (https://tripwire-oracle.app; contact@tripwire.app)' },
+        });
 
         const articles: any[] = res.data?.items?.[0]?.articles ?? [];
         if (articles.length === 0) {

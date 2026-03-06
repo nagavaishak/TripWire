@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import axios from 'axios';
 import { db } from './database/connection';
 import attentionRoutes from './routes/attention.routes';
 import narrativesRoutes from './routes/narratives.routes';
@@ -40,6 +41,25 @@ app.get('/api/oracle/feeds', (_req, res) => {
 
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Debug: test Wikipedia API reachability from this server
+app.get('/api/debug/wiki', async (_req, res) => {
+    try {
+        const d = new Date(Date.now() - 86_400_000);
+        const yyyy = d.getUTCFullYear();
+        const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd   = String(d.getUTCDate()).padStart(2, '0');
+        const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/${yyyy}/${mm}/${dd}`;
+        const r = await axios.get(url, {
+            timeout: 15_000,
+            headers: { 'User-Agent': 'TripWireAttentionOracle/1.0 (https://tripwire-oracle.app)' },
+        });
+        const articles = r.data?.items?.[0]?.articles?.slice(0, 5) ?? [];
+        res.json({ ok: true, url, articles });
+    } catch (err: any) {
+        res.json({ ok: false, error: err.message, code: err.code, status: err.response?.status });
+    }
 });
 
 app.get('/api/oracle/health', async (_req, res) => {
