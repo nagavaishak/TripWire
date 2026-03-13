@@ -1,52 +1,64 @@
 # TripWire — Attention Markets Oracle
 
-Real-time attention data oracle for Solana prediction markets. Aggregates engagement signals across YouTube, Google Trends, and Farcaster into a single **Degree of Attention (DoA)** score, published on-chain via Switchboard.
+Real-time attention oracle for Solana prediction markets. Tracks what the world is paying attention to — from crypto narratives to breaking global events — and publishes a **Degree of Attention (DoA)** score on-chain via Switchboard and Anchor.
 
 ---
 
 ## What It Does
 
-Prediction markets need more than price data — they need to know what the world is paying attention to. TripWire tracks real-time attention signals for topics (e.g. `Solana`, `AI`) across three free data sources and exposes a live oracle score that on-chain programs can consume.
+Prediction markets need more than price data. TripWire aggregates real-time attention signals across multiple data sources into a single DoA score (0–100), updated every 5 minutes, consumable on-chain.
 
-**Sources:**
+**Attention Sources:**
 | Source | Weight | What It Measures |
 |--------|--------|-----------------|
 | Google Trends | 35% | Search interest (leading indicator) |
 | Farcaster | 35% | Crypto-native social discourse |
 | YouTube | 30% | Content consumption (lagging indicator) |
 
-**Output:** DoA score (0–100), updated every 5 minutes, published on-chain via Switchboard oracle.
+**Global Narrative Detection:**
+Wikipedia Most-Read API surfaces what the world is actually reading about today (Iran, elections, breaking events). Topics crossing attention thresholds are auto-promoted to tracked markets.
+
+**Output:** DoA score (0–100) + TripWire Attention Index (TAI), updated every 5 minutes, published on-chain.
 
 ---
 
 ## Architecture
 
 ```
-YouTube API ─────┐
-Google Trends ───┼──► AttentionIndexComputer ──► DoA score ──► Switchboard oracle
-Farcaster API ───┘         (time-decay + normalization)             (Solana devnet)
-                                    │
-                                    └──► REST API ──► VistaDex frontend
+YouTube API ──────┐
+Google Trends ────┼──► AttentionIndexComputer ──► DoA + TAI ──► Switchboard oracle
+Farcaster API ────┘        (time-decay + normalization)        ──► Anchor program
+                                     │
+Wikipedia Most-Read API              │                              (Solana devnet)
+  └──► Global narratives ────────────┘
+         └──► Auto-promote to tracked topics
+                                     │
+                                     └──► REST API ──► TripWire dashboard
 ```
 
-**Three components:**
+**Components:**
 
-1. **`attention-markets/`** — Oracle backend (Node.js + TypeScript)
-   - Collectors for each data source
-   - Time-decay weighting (90-min half-life)
-   - PostgreSQL for score history
-   - Scheduled updates via node-cron
-   - Deployed on Render
+1. **`attention-markets/`** — Oracle backend (Node.js + TypeScript, deployed on Render)
+   - Collectors: YouTube, Google Trends, Farcaster
+   - Global narrative detection via Wikipedia Most-Read API
+   - Topics table: DB-driven, supports hot-add of new markets
+   - TAI scoring: `0.45×Level + 0.30×Momentum + 0.15×Velocity + 0.10×Consensus`
+   - Auto-promotes trending global narratives to market cards
+   - Pushes DoA on-chain every 5 min via Switchboard + Anchor
 
-2. **`frontend/`** — VistaDex dashboard (Next.js 16)
-   - Compare DoA scores across topics
-   - Portfolio view of attention positions
-   - Live charts with component breakdown
+2. **`attention-markets-program/`** — Anchor program on Solana devnet
+   - `create_market` — oracle creates a market PDA per topic
+   - `update_doa` — oracle pushes DoA score (0–10,000 bps)
+   - `place_bet` — users bet SOL on High/Low
+   - `resolve_market` — oracle resolves when deadline hits
+   - `claim_winnings` — winners claim proportional payout from vault
 
-3. **`src/`** — Market comparison backend (Node.js + TypeScript)
-   - Kalshi + Polymarket API integrations
-   - Arbitrage detection
-   - Automation rules + Jupiter swap execution
+3. **`frontend/`** — TripWire dashboard (Next.js 16, deployed on Vercel)
+   - Landing page with invite-code gate
+   - Market cards grid (Trendle-style UX)
+   - Topic detail: DoA chart + signal breakdown + trade panel
+   - Global Pulse widget: live auto-promoted narratives
+   - Wallet connect + on-chain bet placement
 
 ---
 
@@ -60,11 +72,8 @@ npm install
 cp .env.example .env
 # Set YOUTUBE_API_KEY and DATABASE_URL
 
-# Run migrations
-npm run migrate
-
-# Start dev server (port 3000)
-npm run dev
+npm run migrate   # run DB migrations
+npm run dev       # port 3000
 ```
 
 ### Frontend
@@ -72,58 +81,60 @@ npm run dev
 ```bash
 cd frontend
 npm install
-npm run dev
-# Runs on http://localhost:3001
+npm run dev       # port 3001
+```
+
+### Anchor Program
+
+```bash
+cd attention-markets-program
+anchor test --skip-local-validator --skip-deploy --provider.cluster devnet
 ```
 
 ---
 
 ## API
 
-**Live endpoint:** `https://attention-markets-api.onrender.com`
+**Live:** `https://attention-markets-api.onrender.com`
 
 ```bash
+# All tracked topics with latest DoA + TAI
+GET /api/topics
+
 # Latest DoA score for a topic
 GET /api/attention/:topic
 
-# Response:
-{
-  "value": 62.3,
-  "timestamp": 1771941602,
-  "topic": "AI",
-  "sources": ["youtube", "google_trends", "farcaster"],
-  "weights": { "youtube": 0.30, "google_trends": 0.35, "farcaster": 0.35 }
-}
-
-# Historical scores (last N hours)
+# Historical scores
 GET /api/attention/:topic/history?hours=24
 
-# All tracked topics
-GET /api/attention
+# Global trending narratives (Wikipedia-sourced)
+GET /api/narratives/global
+
+# Rising narratives for a specific topic
+GET /api/narratives/:topic
 ```
 
 ---
 
-## Switchboard Oracle
+## Anchor Program
 
-DoA scores are pushed on-chain every 5 minutes to Switchboard feeds on Solana devnet.
+Deployed on Solana devnet: `35mr61jToyKGyynBgFtQJ8RnEEx3aoSVa3ofyK7rAgzb`
+
+PDAs:
+- Market: `[b"market", topic.as_bytes()]`
+- Vault: `[b"vault", market.key()]`
+- Position: `[b"position", market.key(), bettor.key()]`
 
 ```bash
-# Read oracle values
-cd attention-markets
-npm run oracle:read
-
-# Monitor live updates
-npm run oracle:monitor
+# Push DoA scores on-chain
+cd attention-markets && npm run anchor:push
 ```
-
-Feeds config: `attention-markets/switchboard/feeds.json`
 
 ---
 
 ## Environment Variables
 
-### attention-markets/.env
+### `attention-markets/.env`
 
 ```bash
 DATABASE_URL=postgresql://localhost/attention_markets
@@ -132,22 +143,16 @@ ATTENTION_TOPICS=Solana,AI
 ATTENTION_UPDATE_INTERVAL_MINUTES=5
 ATTENTION_HALF_LIFE_MINUTES=90
 
-# Optional (enables on-chain oracle push)
+# Solana (enables on-chain oracle push)
 SOLANA_PRIVATE_KEY=
+SOLANA_RPC_URL=https://api.devnet.solana.com
 ```
 
----
-
-## Tests
+### `frontend/.env.local`
 
 ```bash
-cd attention-markets
-
-# Test collectors (no DB needed)
-npm run test:collectors
-
-# Test full index computation
-npm run test:index
+NEXT_PUBLIC_API_URL=https://attention-markets-api.onrender.com
+TRIPWIRE_ACCESS_CODES=SIGNAL,TRENDLE,ORACLE,LAUNCH,ACCESS
 ```
 
 ---
@@ -157,19 +162,20 @@ npm run test:index
 - **Runtime:** Node.js 20 + TypeScript
 - **API:** Express
 - **Database:** PostgreSQL
-- **Frontend:** Next.js 16, React 19, Tailwind CSS 4
-- **Blockchain:** Solana web3.js, Switchboard oracle
+- **Frontend:** Next.js 16, React 19, Tailwind CSS 4, Framer Motion
+- **Blockchain:** Solana, Anchor, Switchboard oracle
 - **Hosting:** Render (backend), Vercel (frontend)
 
 ---
 
 ## Deployment
 
-The oracle backend auto-deploys to Render on push to `attention-markets-v1`. Render config is in `render.yaml` — migrations run automatically on deploy.
+Backend auto-deploys to Render on push to `attention-markets-v1`. Migrations run automatically on each deploy.
+
+Frontend auto-deploys to Vercel on push to `attention-markets-v1`.
 
 ```bash
 git push origin attention-markets-v1
-# Render picks it up, runs: npm install && npm run build && node dist/database/migrate.js
 ```
 
 ---
